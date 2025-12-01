@@ -6,7 +6,6 @@ Loads and parses plist manifests, providing lookup by PayloadType.
 
 import logging
 import plistlib
-from typing import Optional
 
 from .cache import ManifestCache
 
@@ -34,7 +33,7 @@ class ManifestLoader:
 
     def __init__(
         self,
-        cache: Optional[ManifestCache] = None,
+        cache: ManifestCache | None = None,
         offline: bool = False,
     ):
         """
@@ -100,7 +99,7 @@ class ManifestLoader:
         self._index_loaded = True
         logger.debug(f"Loaded index with {len(self._index)} domains")
 
-    def get_manifest(self, payload_type: str) -> Optional[dict]:
+    def get_manifest(self, payload_type: str) -> dict | None:
         """
         Get manifest for a PayloadType.
 
@@ -152,7 +151,7 @@ class ManifestLoader:
             logger.error(f"Failed to parse manifest {manifest_path}: {e}")
             return None
 
-    def get_manifest_version(self, payload_type: str) -> Optional[int]:
+    def get_manifest_version(self, payload_type: str) -> int | None:
         """Get the version number for a manifest."""
         self.load_index()
         info = self._index.get(payload_type)

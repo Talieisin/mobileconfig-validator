@@ -9,7 +9,7 @@ import plistlib
 import re
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from .loader import ManifestLoader
 from .types import Severity, ValidationIssue, ValidationResult
@@ -72,7 +72,7 @@ class SchemaValidator:
         "date": type(None),  # datetime objects handled specially
     }
 
-    def __init__(self, loader: Optional[ManifestLoader] = None, offline: bool = False):
+    def __init__(self, loader: ManifestLoader | None = None, offline: bool = False):
         """
         Initialize the validator.
 
@@ -721,7 +721,7 @@ class SchemaValidator:
 
         return issues
 
-    def _get_string_array_item_def(self, item_subkeys: list) -> Optional[dict]:
+    def _get_string_array_item_def(self, item_subkeys: list) -> dict | None:
         """
         Get string item definition for arrays of strings.
 

@@ -11,7 +11,6 @@ import os
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +56,8 @@ class ManifestCache:
 
     def __init__(
         self,
-        cache_dir: Optional[Path] = None,
-        max_age_days: Optional[int] = None,
+        cache_dir: Path | None = None,
+        max_age_days: int | None = None,
         offline: bool = False,
     ):
         """

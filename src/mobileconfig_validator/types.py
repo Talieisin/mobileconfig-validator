@@ -5,7 +5,7 @@ Type definitions for mobileconfig validation.
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class Severity(Enum):
@@ -22,8 +22,8 @@ class ValidationIssue:
     code: str           # e.g., "E001", "W001", "I001"
     message: str
     key_path: str       # e.g., "PayloadContent[0].antivirusEngine.enforcementLevel"
-    expected: Optional[Any] = None
-    actual: Optional[Any] = None
+    expected: Any | None = None
+    actual: Any | None = None
 
     def __str__(self) -> str:
         parts = [f"[{self.code}] {self.key_path}: {self.message}"]

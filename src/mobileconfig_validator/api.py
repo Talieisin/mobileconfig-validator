@@ -6,7 +6,6 @@ without the overhead of CLI argument parsing.
 """
 
 from pathlib import Path
-from typing import Optional, Union
 
 from .cache import ManifestCache
 from .loader import ManifestLoader
@@ -15,9 +14,9 @@ from .validator import SchemaValidator
 
 
 def validate_file(
-    path: Union[str, Path],
+    path: str | Path,
     offline: bool = False,
-    cache_dir: Optional[Path] = None,
+    cache_dir: Path | None = None,
 ) -> ValidationResult:
     """
     Validate a single mobileconfig file.
@@ -48,9 +47,9 @@ def validate_file(
 
 
 def validate_files(
-    paths: list[Union[str, Path]],
+    paths: list[str | Path],
     offline: bool = False,
-    cache_dir: Optional[Path] = None,
+    cache_dir: Path | None = None,
 ) -> BatchResult:
     """
     Validate multiple mobileconfig files.
@@ -83,7 +82,7 @@ def validate_files(
 
 
 def update_cache(
-    cache_dir: Optional[Path] = None,
+    cache_dir: Path | None = None,
     force: bool = False,
 ) -> bool:
     """
@@ -100,7 +99,7 @@ def update_cache(
     return cache.update(force=force)
 
 
-def get_cache_status(cache_dir: Optional[Path] = None) -> dict:
+def get_cache_status(cache_dir: Path | None = None) -> dict:
     """
     Get information about the manifest cache.
 
