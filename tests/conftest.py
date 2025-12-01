@@ -1,9 +1,8 @@
-"""
-Pytest fixtures for mobileconfig-validator tests.
-"""
+"""Pytest fixtures for mobileconfig-validator tests."""
+
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 
 
 @pytest.fixture
@@ -22,3 +21,21 @@ def valid_fixtures_dir(fixtures_dir: Path) -> Path:
 def invalid_fixtures_dir(fixtures_dir: Path) -> Path:
     """Return the path to the invalid fixtures directory."""
     return fixtures_dir / "invalid"
+
+
+@pytest.fixture
+def valid_fixture_files(valid_fixtures_dir: Path) -> list[Path]:
+    """Return all valid fixture files."""
+    return sorted(valid_fixtures_dir.glob("*.mobileconfig"))
+
+
+@pytest.fixture
+def invalid_fixture_files(invalid_fixtures_dir: Path) -> list[Path]:
+    """Return all invalid fixture files."""
+    return sorted(invalid_fixtures_dir.glob("*.mobileconfig"))
+
+
+@pytest.fixture
+def warning_fixtures_dir(fixtures_dir: Path) -> Path:
+    """Return the path to the warning fixtures directory."""
+    return fixtures_dir / "warning"

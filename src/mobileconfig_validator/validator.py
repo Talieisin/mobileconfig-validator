@@ -9,7 +9,7 @@ import plistlib
 import re
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 
 from .loader import ManifestLoader
 from .types import Severity, ValidationIssue, ValidationResult
@@ -24,6 +24,7 @@ class SchemaValidator:
     Checks performed:
 
     ERRORS (invalid, blocks commit):
+    - E000: Invalid plist file (parse error)
     - E001: Unknown PayloadType with no matching manifest
     - E002: Missing required key (pfm_require="always")
     - E003: Type mismatch (pfm_type vs actual type)
@@ -38,10 +39,8 @@ class SchemaValidator:
     - W001: Deprecated key (pfm_deprecated)
     - W002: Unknown key not in manifest
     - W003: Platform mismatch (pfm_platforms)
-    - W004: macOS version requirement (pfm_macos_min)
 
     INFO (suggestions):
-    - I001: Missing optional but recommended key
     - I002: Missing PayloadOrganization
     - I003: Non-unique PayloadIdentifier
     """
@@ -119,13 +118,43 @@ class SchemaValidator:
                 )
             )
             return result
+        except PermissionError:
+            result.issues.append(
+                ValidationIssue(
+                    severity=Severity.ERROR,
+                    code="E000",
+                    message="Permission denied",
+                    key_path="(root)",
+                )
+            )
+            return result
+        except IsADirectoryError:
+            result.issues.append(
+                ValidationIssue(
+                    severity=Severity.ERROR,
+                    code="E000",
+                    message="Path is a directory, not a file",
+                    key_path="(root)",
+                )
+            )
+            return result
+        except OSError as e:
+            result.issues.append(
+                ValidationIssue(
+                    severity=Severity.ERROR,
+                    code="E000",
+                    message=f"Cannot read file: {e}",
+                    key_path="(root)",
+                )
+            )
+            return result
 
         # Validate outer profile structure
         result.issues.extend(self._validate_profile_structure(profile))
 
         # Collect UUIDs for duplicate detection
-        all_uuids: Set[str] = set()
-        all_identifiers: List[str] = []
+        all_uuids: set[str] = set()
+        all_identifiers: list[str] = []
 
         # Get outer profile UUID
         outer_uuid = profile.get("PayloadUUID")
@@ -202,7 +231,7 @@ class SchemaValidator:
                 # No manifest found
                 result.issues.append(
                     ValidationIssue(
-                        severity=Severity.WARNING,
+                        severity=Severity.ERROR,
                         code="E001",
                         message="Unknown PayloadType - no manifest found",
                         key_path=f"{prefix}.PayloadType",
@@ -230,7 +259,7 @@ class SchemaValidator:
 
         return result
 
-    def _validate_profile_structure(self, profile: dict) -> List[ValidationIssue]:
+    def _validate_profile_structure(self, profile: dict) -> list[ValidationIssue]:
         """Validate the outer profile structure."""
         issues = []
 
@@ -294,7 +323,7 @@ class SchemaValidator:
 
     def _validate_payload_structure(
         self, payload: dict, prefix: str
-    ) -> List[ValidationIssue]:
+    ) -> list[ValidationIssue]:
         """Validate individual payload structure."""
         issues = []
 
@@ -332,7 +361,7 @@ class SchemaValidator:
 
         return issues
 
-    def _validate_uuid(self, value: str, key_path: str) -> List[ValidationIssue]:
+    def _validate_uuid(self, value: str, key_path: str) -> list[ValidationIssue]:
         """Validate UUID format."""
         issues = []
         try:
@@ -351,7 +380,7 @@ class SchemaValidator:
 
     def _validate_payload_against_manifest(
         self, payload: dict, manifest: dict, prefix: str
-    ) -> List[ValidationIssue]:
+    ) -> list[ValidationIssue]:
         """Validate a payload against its manifest schema."""
         issues = []
 
@@ -424,7 +453,7 @@ class SchemaValidator:
 
         return issues
 
-    def _get_immediate_subkey_defs(self, subkeys: list) -> Dict[str, dict]:
+    def _get_immediate_subkey_defs(self, subkeys: list) -> dict[str, dict]:
         """
         Get only immediate (non-nested) subkey definitions.
 
@@ -447,8 +476,8 @@ class SchemaValidator:
         return result
 
     def _unwrap_array_item_schema(
-        self, item_defs: Dict[str, dict], actual_items: list
-    ) -> Dict[str, dict]:
+        self, item_defs: dict[str, dict], actual_items: list
+    ) -> dict[str, dict]:
         """
         Handle ProfileManifests wrapper pattern for array items.
 
@@ -492,7 +521,7 @@ class SchemaValidator:
 
     def _validate_key(
         self, key_path: str, value: Any, key_def: dict
-    ) -> List[ValidationIssue]:
+    ) -> list[ValidationIssue]:
         """Validate a single key against its pfm definition."""
         issues = []
 
@@ -613,6 +642,16 @@ class SchemaValidator:
                                 nested_defs[nested_key],
                             )
                         )
+                    else:
+                        # Warn about unknown nested keys
+                        issues.append(
+                            ValidationIssue(
+                                severity=Severity.WARNING,
+                                code="W002",
+                                message="Unknown key not in schema",
+                                key_path=f"{key_path}.{nested_key}",
+                            )
+                        )
 
         # Validate array items
         if expected_type == "array" and isinstance(value, list):
@@ -653,6 +692,16 @@ class SchemaValidator:
                                         f"{key_path}[{idx}].{item_key}",
                                         item_value,
                                         item_defs[item_key],
+                                    )
+                                )
+                            else:
+                                # Warn about unknown keys in array items
+                                issues.append(
+                                    ValidationIssue(
+                                        severity=Severity.WARNING,
+                                        code="W002",
+                                        message="Unknown key not in schema",
+                                        key_path=f"{key_path}[{idx}].{item_key}",
                                     )
                                 )
                     elif isinstance(item, str) and string_item_def:

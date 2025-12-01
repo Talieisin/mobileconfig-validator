@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PayloadDisplayName</key>
+			<string>Dock Settings</string>
+			<key>PayloadIdentifier</key>
+			<string>com.example.dock</string>
+			<key>PayloadType</key>
+			<string>com.apple.dock</string>
+			<key>PayloadUUID</key>
+			<string>aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>tilesize</key>
+			<integer>36</integer>
+		</dict>
+		<dict>
+			<key>PayloadDisplayName</key>
+			<string>Finder Settings</string>
+			<key>PayloadIdentifier</key>
+			<string>com.example.finder</string>
+			<key>PayloadType</key>
+			<string>com.apple.finder</string>
+			<key>PayloadUUID</key>
+			<string>bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>PayloadDisplayName</key>
+	<string>Multi-Payload Profile</string>
+	<key>PayloadIdentifier</key>
+	<string>com.example.profile.multi</string>
+	<key>PayloadOrganization</key>
+	<string>Example Organisation</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>cccccccc-cccc-cccc-cccc-cccccccccccc</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

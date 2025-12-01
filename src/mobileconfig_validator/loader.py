@@ -6,8 +6,7 @@ Loads and parses plist manifests, providing lookup by PayloadType.
 
 import logging
 import plistlib
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 
 from .cache import ManifestCache
 
@@ -46,8 +45,8 @@ class ManifestLoader:
             offline: If True, don't attempt network operations.
         """
         self.cache = cache or ManifestCache(offline=offline)
-        self._index: Dict[str, dict] = {}  # domain -> {path, category, version, modified}
-        self._manifests: Dict[str, dict] = {}  # domain -> parsed manifest (lazy loaded)
+        self._index: dict[str, dict] = {}  # domain -> {path, category, version, modified}
+        self._manifests: dict[str, dict] = {}  # domain -> parsed manifest (lazy loaded)
         self._index_loaded = False
 
     def load_index(self) -> None:
@@ -127,7 +126,8 @@ class ManifestLoader:
                     break
 
         if not info:
-            # Try platform-specific suffix variants (e.g., com.apple.applicationaccess → com.apple.applicationaccess-macOS)
+            # Try platform-specific suffix variants
+            # e.g., com.apple.applicationaccess → com.apple.applicationaccess-macOS
             for suffix in ["-macOS", "-iOS", "-tvOS", ".macOS", ".iOS", ".tvOS"]:
                 variant = f"{payload_type}{suffix}"
                 if variant in self._index:
@@ -158,7 +158,7 @@ class ManifestLoader:
         info = self._index.get(payload_type)
         return info.get("version") if info else None
 
-    def get_all_domains(self) -> List[str]:
+    def get_all_domains(self) -> list[str]:
         """Get list of all known domains."""
         self.load_index()
         return list(self._index.keys())
@@ -171,7 +171,7 @@ class ManifestLoader:
         # Case-insensitive check
         return any(d.lower() == payload_type.lower() for d in self._index)
 
-    def get_subkey_definitions(self, manifest: dict) -> Dict[str, dict]:
+    def get_subkey_definitions(self, manifest: dict) -> dict[str, dict]:
         """
         Build a flat map of key names to their definitions from pfm_subkeys.
 
@@ -189,7 +189,7 @@ class ManifestLoader:
     def _extract_subkeys(
         self,
         subkeys: list,
-        result: Dict[str, dict],
+        result: dict[str, dict],
         prefix: str = "",
     ) -> None:
         """

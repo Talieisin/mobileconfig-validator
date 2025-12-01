@@ -13,43 +13,29 @@ Validate Apple Configuration Profiles (.mobileconfig) against ProfileManifests s
 
 ## Installation
 
-### From PyPI
-
-```bash
-pip install mobileconfig-validator
-```
-
-### From Source
-
 ```bash
 git clone https://github.com/Talieisin/mobileconfig-validator.git
 cd mobileconfig-validator
-pip install -e .
-```
-
-### Using pipx (Isolated)
-
-```bash
-pipx install mobileconfig-validator
+uv sync
 ```
 
 ## Quick Start
 
 ```bash
 # Validate a single file
-mobileconfig-validator profile.mobileconfig
+uv run mobileconfig-validator profile.mobileconfig
 
 # Or use the short alias
-mcv profile.mobileconfig
+uv run mcv profile.mobileconfig
 
 # Validate multiple files
-mobileconfig-validator *.mobileconfig
+uv run mobileconfig-validator *.mobileconfig
 
 # Strict mode for CI (exits 1 on errors)
-mobileconfig-validator --strict profile.mobileconfig
+uv run mobileconfig-validator --strict profile.mobileconfig
 
 # JSON output for tooling
-mobileconfig-validator --format json profile.mobileconfig
+uv run mobileconfig-validator --format json profile.mobileconfig
 ```
 
 ## Programmatic API
@@ -74,6 +60,7 @@ print(f"Valid: {batch.valid_files}/{batch.total_files}")
 
 | Code | Description |
 |------|-------------|
+| E000 | Invalid plist file (parse error) |
 | E001 | Unknown PayloadType (no manifest found) |
 | E002 | Missing required key (pfm_require="always") |
 | E003 | Type mismatch (expected vs actual) |
@@ -91,13 +78,11 @@ print(f"Valid: {batch.valid_files}/{batch.total_files}")
 | W001 | Deprecated key |
 | W002 | Unknown key not in schema |
 | W003 | Platform mismatch (not macOS) |
-| W004 | macOS version requirement noted |
 
 ### Info (suggestions)
 
 | Code | Description |
 |------|-------------|
-| I001 | Missing optional recommended key |
 | I002 | Missing PayloadOrganization |
 | I003 | Non-unique PayloadIdentifier |
 
@@ -106,7 +91,7 @@ print(f"Valid: {batch.valid_files}/{batch.total_files}")
 ```
 usage: mobileconfig-validator [-h] [--strict] [--warnings-as-errors]
                               [--format {text,json}] [--quiet] [--no-colour]
-                              [--update-cache] [--cache-status]
+                              [--update-cache] [--cache-status] [--clear-cache]
                               [--cache-dir PATH] [--offline] [--verbose]
                               [--version]
                               [files ...]
@@ -119,6 +104,7 @@ Options:
   --no-colour           Disable ANSI colour output
   --update-cache, -u    Force update ProfileManifests cache
   --cache-status        Show cache status and exit
+  --clear-cache         Clear ProfileManifests cache and exit
   --cache-dir PATH      Custom cache directory
   --offline             Don't attempt network operations
   --verbose, -v         Enable verbose logging
@@ -127,7 +113,9 @@ Options:
 
 ## Cache Management
 
-The validator downloads ProfileManifests schemas on first run and caches them locally:
+The validator downloads ProfileManifests schemas on first run and caches them locally using git (sparse clone, ~5MB).
+
+**Requirements:** `git` must be installed and available in PATH.
 
 - **Default location**: `~/.cache/mobileconfig-validator/`
 - **Environment variable**: `VALIDATOR_CACHE_DIR`
@@ -135,13 +123,16 @@ The validator downloads ProfileManifests schemas on first run and caches them lo
 
 ```bash
 # Check cache status
-mobileconfig-validator --cache-status
+uv run mobileconfig-validator --cache-status
 
 # Force update
-mobileconfig-validator --update-cache
+uv run mobileconfig-validator --update-cache
+
+# Clear cache completely
+uv run mobileconfig-validator --clear-cache
 
 # Work offline (use existing cache)
-mobileconfig-validator --offline profile.mobileconfig
+uv run mobileconfig-validator --offline profile.mobileconfig
 ```
 
 ## Pre-commit Integration

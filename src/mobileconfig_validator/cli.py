@@ -11,7 +11,6 @@ import glob
 import logging
 import sys
 from pathlib import Path
-from typing import List
 
 from .api import get_cache_status, update_cache, validate_files
 from .formatter import get_formatter
@@ -24,22 +23,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def expand_paths(paths: List[str]) -> List[Path]:
-    """Expand glob patterns to list of files."""
+def expand_paths(paths: list[str]) -> list[Path]:
+    """Expand glob patterns and ~ to list of files."""
     files = []
     for pattern in paths:
+        # Expand ~ to home directory
+        expanded_pattern = Path(pattern).expanduser()
+        pattern_str = str(expanded_pattern)
+
         # Expand glob patterns
-        if "*" in pattern or "?" in pattern:
-            expanded = glob.glob(pattern, recursive=True)
+        if "*" in pattern_str or "?" in pattern_str:
+            expanded = glob.glob(pattern_str, recursive=True)
             files.extend(Path(f) for f in expanded)
         else:
-            files.append(Path(pattern))
+            files.append(expanded_pattern)
 
-    # Filter to existing files
-    return [f for f in files if f.exists() and f.suffix == ".mobileconfig"]
+    # Filter to existing files with .mobileconfig extension (case-insensitive)
+    return [f for f in files if f.exists() and f.suffix.lower() == ".mobileconfig"]
 
 
-def main(args: List[str] = None) -> int:
+def main(args: list[str] = None) -> int:
     """
     Main entry point for CLI.
 
@@ -118,6 +121,12 @@ Examples:
     )
 
     parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Clear ProfileManifests cache and exit",
+    )
+
+    parser.add_argument(
         "--cache-dir",
         type=Path,
         help="Custom cache directory",
@@ -157,6 +166,19 @@ Examples:
             print(f"  {key}: {value}")
         return 0
 
+    # Handle cache clear
+    if parsed.clear_cache:
+        from .cache import ManifestCache
+
+        cache = ManifestCache(cache_dir=parsed.cache_dir)
+        try:
+            cache.clear()
+            print("Cache cleared successfully")
+        except ValueError as e:
+            print(f"Error clearing cache: {e}", file=sys.stderr)
+            return 2
+        return 0
+
     # Handle cache update
     if parsed.update_cache:
         print("Updating ProfileManifests cache...")
@@ -177,10 +199,13 @@ Examples:
     # Expand file paths
     files = expand_paths(parsed.files)
 
-    # Handle no files gracefully (for pre-commit with no matching files)
+    # Handle no files
     if not files:
         if parsed.files:
+            # User specified paths but none resolved - this is an error
             print("No mobileconfig files found", file=sys.stderr)
+            return 2
+        # No files specified at all - show help or exit cleanly
         return 0
 
     # Validate files

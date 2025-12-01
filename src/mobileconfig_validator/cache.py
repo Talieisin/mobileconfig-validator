@@ -9,7 +9,7 @@ import json
 import logging
 import os
 import subprocess
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -73,9 +73,12 @@ class ManifestCache:
         self.cache_dir = cache_dir or Path(
             os.environ.get("VALIDATOR_CACHE_DIR", str(DEFAULT_CACHE_DIR))
         )
-        self.max_age_days = max_age_days or int(
-            os.environ.get("VALIDATOR_CACHE_MAX_AGE", str(DEFAULT_MAX_AGE_DAYS))
-        )
+        if max_age_days is not None:
+            self.max_age_days = max_age_days
+        else:
+            self.max_age_days = int(
+                os.environ.get("VALIDATOR_CACHE_MAX_AGE", str(DEFAULT_MAX_AGE_DAYS))
+            )
         self.offline = offline or os.environ.get("VALIDATOR_OFFLINE", "").lower() in (
             "1",
             "true",
@@ -134,9 +137,26 @@ class ManifestCache:
         """Remove all cached data."""
         import shutil
 
-        if self.cache_dir.exists():
-            shutil.rmtree(self.cache_dir)
-            logger.info(f"Cleared cache at {self.cache_dir}")
+        if not self.cache_dir.exists():
+            return
+
+        # Safety check: only delete if path looks like our cache directory
+        # Must be under user's home or contain 'mobileconfig-validator' in path
+        resolved = self.cache_dir.resolve()
+        home = Path.home().resolve()
+        is_safe = (
+            resolved.is_relative_to(home)
+            and "mobileconfig-validator" in str(resolved)
+        )
+
+        if not is_safe:
+            raise ValueError(
+                f"Refusing to delete {resolved}: "
+                "path must be under home directory and contain 'mobileconfig-validator'"
+            )
+
+        shutil.rmtree(self.cache_dir)
+        logger.info(f"Cleared cache at {self.cache_dir}")
 
     def get_status(self) -> dict:
         """Get cache status information."""
@@ -212,8 +232,8 @@ class ManifestCache:
         self._save_metadata(
             {
                 "cache_version": 1,
-                "clone_created": datetime.utcnow().isoformat() + "Z",
-                "last_check": datetime.utcnow().isoformat() + "Z",
+                "clone_created": datetime.now(UTC).isoformat() + "Z",
+                "last_check": datetime.now(UTC).isoformat() + "Z",
             }
         )
 
@@ -262,7 +282,7 @@ class ManifestCache:
 
             # Update last check time
             metadata = self._load_metadata()
-            metadata["last_check"] = datetime.utcnow().isoformat() + "Z"
+            metadata["last_check"] = datetime.now(UTC).isoformat() + "Z"
             self._save_metadata(metadata)
 
             return updated
@@ -271,7 +291,7 @@ class ManifestCache:
             logger.warning(f"Failed to update cache: {e}")
             # Update last check even on failure to avoid hammering
             metadata = self._load_metadata()
-            metadata["last_check"] = datetime.utcnow().isoformat() + "Z"
+            metadata["last_check"] = datetime.now(UTC).isoformat() + "Z"
             self._save_metadata(metadata)
             return False
 
@@ -286,7 +306,7 @@ class ManifestCache:
         try:
             # Parse ISO timestamp
             last_check_dt = datetime.fromisoformat(last_check.rstrip("Z"))
-            age = datetime.utcnow() - last_check_dt
+            age = datetime.now(UTC) - last_check_dt
             return age > timedelta(days=self.max_age_days)
         except (ValueError, TypeError):
             return True

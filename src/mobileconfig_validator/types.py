@@ -5,7 +5,7 @@ Type definitions for mobileconfig validation.
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 
 class Severity(Enum):
@@ -38,8 +38,8 @@ class ValidationIssue:
 class ValidationResult:
     """Result of validating a single mobileconfig file."""
     file_path: Path
-    payload_types: List[str] = field(default_factory=list)
-    issues: List[ValidationIssue] = field(default_factory=list)
+    payload_types: list[str] = field(default_factory=list)
+    issues: list[ValidationIssue] = field(default_factory=list)
     manifest_versions: dict = field(default_factory=dict)  # payload_type -> version
 
     @property
@@ -63,7 +63,7 @@ class ValidationResult:
 @dataclass
 class BatchResult:
     """Result of validating multiple mobileconfig files."""
-    results: List[ValidationResult] = field(default_factory=list)
+    results: list[ValidationResult] = field(default_factory=list)
 
     @property
     def total_files(self) -> int:

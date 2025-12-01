@@ -6,7 +6,7 @@ without the overhead of CLI argument parsing.
 """
 
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 from .cache import ManifestCache
 from .loader import ManifestLoader
@@ -48,7 +48,7 @@ def validate_file(
 
 
 def validate_files(
-    paths: List[Union[str, Path]],
+    paths: list[Union[str, Path]],
     offline: bool = False,
     cache_dir: Optional[Path] = None,
 ) -> BatchResult:

@@ -5,10 +5,18 @@ Supports text (with ANSI colors) and JSON output formats.
 """
 
 import json
+import re
 import sys
-from typing import List
 
 from .types import BatchResult, Severity, ValidationIssue, ValidationResult
+
+# Pattern to match ANSI escape sequences
+_ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _sanitise_for_terminal(text: str) -> str:
+    """Remove ANSI escape sequences from text to prevent terminal injection."""
+    return _ANSI_ESCAPE_PATTERN.sub("", text)
 
 
 class BaseFormatter:
@@ -75,22 +83,26 @@ class PlainTextFormatter(BaseFormatter):
         """Format a single file's validation result."""
         lines = []
 
+        # Sanitise file path to prevent terminal injection
+        safe_path = _sanitise_for_terminal(str(result.file_path))
+
         # Header with PASS/FAIL status
         if result.is_valid:
             status = f"{self._c('GREEN')}PASS{self._c('RESET')}"
         else:
             status = f"{self._c(Severity.ERROR)}FAIL{self._c('RESET')}"
 
-        lines.append(f"{status} {result.file_path}")
+        lines.append(f"{status} {safe_path}")
 
         # Show payload types and manifest versions
         if result.payload_types:
             for payload_type in result.payload_types:
+                safe_type = _sanitise_for_terminal(payload_type)
                 version = result.manifest_versions.get(payload_type)
                 if version:
-                    lines.append(f"  Manifest: {payload_type} (v{version})")
+                    lines.append(f"  Manifest: {safe_type} (v{version})")
                 else:
-                    lines.append(f"  Manifest: {payload_type}")
+                    lines.append(f"  Manifest: {safe_type}")
 
         # Group issues by severity
         for severity in [Severity.ERROR, Severity.WARNING, Severity.INFO]:
@@ -102,8 +114,9 @@ class PlainTextFormatter(BaseFormatter):
                 continue
 
             lines.append("")
-            color = self._c(severity)
-            lines.append(f"  {color}{severity.value.upper()}S ({len(severity_issues)}):{self._c('RESET')}")
+            colour = self._c(severity)
+            reset = self._c('RESET')
+            lines.append(f"  {colour}{severity.value.upper()}S ({len(severity_issues)}):{reset}")
 
             for issue in severity_issues:
                 lines.append(self._format_issue(issue))
@@ -143,9 +156,9 @@ class PlainTextFormatter(BaseFormatter):
         ]
 
         if batch.invalid_files > 0:
-            lines.append(
-                f"Invalid:          {self._c(Severity.ERROR)}{batch.invalid_files}{self._c('RESET')}"
-            )
+            err_c = self._c(Severity.ERROR)
+            reset = self._c('RESET')
+            lines.append(f"Invalid:          {err_c}{batch.invalid_files}{reset}")
 
         lines.extend([
             "",
@@ -154,9 +167,12 @@ class PlainTextFormatter(BaseFormatter):
         ])
 
         if not self.quiet:
+            warn_c = self._c(Severity.WARNING)
+            info_c = self._c(Severity.INFO)
+            reset = self._c('RESET')
             lines.extend([
-                f"  Warnings:       {self._c(Severity.WARNING)}{batch.warning_count}{self._c('RESET')}",
-                f"  Info:           {self._c(Severity.INFO)}{batch.info_count}{self._c('RESET')}",
+                f"  Warnings:       {warn_c}{batch.warning_count}{reset}",
+                f"  Info:           {info_c}{batch.info_count}{reset}",
             ])
 
         return "\n".join(lines)
