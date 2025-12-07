@@ -1,0 +1,7 @@
+- id: validate-mobileconfig
+  name: Validate mobileconfig files
+  description: Validates Apple Configuration Profiles against ProfileManifests schemas
+  entry: mobileconfig-validator --strict
+  language: python
+  types: [file]
+  files: \.mobileconfig$
