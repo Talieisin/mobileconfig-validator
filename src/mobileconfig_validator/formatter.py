@@ -62,8 +62,8 @@ class PlainTextFormatter(BaseFormatter):
         Initialise formatter.
 
         Args:
-            colour: Enable ANSI colours. Auto-detected if stdout is TTY.
-            colour: Alias for colour (British spelling).
+            color: Enable ANSI colours. Auto-detected if stdout is TTY.
+            colour: Alias for color (British spelling).
             quiet: Only show errors, suppress warnings and info.
         """
         # Accept both spellings

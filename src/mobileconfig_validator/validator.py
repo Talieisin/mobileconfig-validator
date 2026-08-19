@@ -149,6 +149,19 @@ class SchemaValidator:
             )
             return result
 
+        if not isinstance(profile, dict):
+            result.issues.append(
+                ValidationIssue(
+                    severity=Severity.ERROR,
+                    code="E000",
+                    message="Root of plist must be a dictionary",
+                    key_path="(root)",
+                    expected="dictionary",
+                    actual=type(profile).__name__,
+                )
+            )
+            return result
+
         # Validate outer profile structure
         result.issues.extend(self._validate_profile_structure(profile))
 

@@ -145,7 +145,10 @@ class ManifestLoader:
 
         try:
             with open(manifest_path, "rb") as f:
-                manifest: dict[str, Any] = plistlib.load(f)
+                manifest = plistlib.load(f)
+            if not isinstance(manifest, dict):
+                logger.warning(f"Manifest root is not a dictionary: {manifest_path}")
+                return None
             self._manifests[payload_type] = manifest
             return manifest
         except plistlib.InvalidFileException as e:
