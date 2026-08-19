@@ -32,7 +32,6 @@ jobs:
 
       - name: Run type checker
         run: uv run mypy src
-        continue-on-error: true
 
       - name: Run tests
         run: uv run pytest --cov=mobileconfig_validator --cov-report=xml

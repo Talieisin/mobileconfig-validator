@@ -61,7 +61,7 @@ class SchemaValidator:
     }
 
     # Type mapping from pfm_type to Python types
-    TYPE_MAP = {
+    TYPE_MAP: dict[str, type | tuple[type, ...]] = {
         "string": str,
         "integer": int,
         "real": (int, float),
@@ -74,7 +74,7 @@ class SchemaValidator:
 
     def __init__(self, loader: ManifestLoader | None = None, offline: bool = False):
         """
-        Initialize the validator.
+        Initialise the validator.
 
         Args:
             loader: ManifestLoader instance. Created automatically if not provided.
@@ -145,6 +145,19 @@ class SchemaValidator:
                     code="E000",
                     message=f"Cannot read file: {e}",
                     key_path="(root)",
+                )
+            )
+            return result
+
+        if not isinstance(profile, dict):
+            result.issues.append(
+                ValidationIssue(
+                    severity=Severity.ERROR,
+                    code="E000",
+                    message="Root of plist must be a dictionary",
+                    key_path="(root)",
+                    expected="dictionary",
+                    actual=type(profile).__name__,
                 )
             )
             return result
@@ -240,7 +253,7 @@ class SchemaValidator:
                 )
 
         # Check for non-unique identifiers (INFO level)
-        identifier_counts = {}
+        identifier_counts: dict[str, int] = {}
         for ident in all_identifiers:
             if ident:
                 identifier_counts[ident] = identifier_counts.get(ident, 0) + 1
@@ -259,7 +272,7 @@ class SchemaValidator:
 
         return result
 
-    def _validate_profile_structure(self, profile: dict) -> list[ValidationIssue]:
+    def _validate_profile_structure(self, profile: dict[str, Any]) -> list[ValidationIssue]:
         """Validate the outer profile structure."""
         issues = []
 
@@ -322,7 +335,7 @@ class SchemaValidator:
         return issues
 
     def _validate_payload_structure(
-        self, payload: dict, prefix: str
+        self, payload: dict[str, Any], prefix: str
     ) -> list[ValidationIssue]:
         """Validate individual payload structure."""
         issues = []
@@ -379,7 +392,7 @@ class SchemaValidator:
         return issues
 
     def _validate_payload_against_manifest(
-        self, payload: dict, manifest: dict, prefix: str
+        self, payload: dict[str, Any], manifest: dict[str, Any], prefix: str
     ) -> list[ValidationIssue]:
         """Validate a payload against its manifest schema."""
         issues = []
@@ -453,7 +466,7 @@ class SchemaValidator:
 
         return issues
 
-    def _get_immediate_subkey_defs(self, subkeys: list) -> dict[str, dict]:
+    def _get_immediate_subkey_defs(self, subkeys: list[Any]) -> dict[str, dict[str, Any]]:
         """
         Get only immediate (non-nested) subkey definitions.
 
@@ -476,8 +489,8 @@ class SchemaValidator:
         return result
 
     def _unwrap_array_item_schema(
-        self, item_defs: dict[str, dict], actual_items: list
-    ) -> dict[str, dict]:
+        self, item_defs: dict[str, dict[str, Any]], actual_items: list[Any]
+    ) -> dict[str, dict[str, Any]]:
         """
         Handle ProfileManifests wrapper pattern for array items.
 
@@ -520,7 +533,7 @@ class SchemaValidator:
         return item_defs
 
     def _validate_key(
-        self, key_path: str, value: Any, key_def: dict
+        self, key_path: str, value: Any, key_def: dict[str, Any]
     ) -> list[ValidationIssue]:
         """Validate a single key against its pfm definition."""
         issues = []
@@ -721,7 +734,7 @@ class SchemaValidator:
 
         return issues
 
-    def _get_string_array_item_def(self, item_subkeys: list) -> dict | None:
+    def _get_string_array_item_def(self, item_subkeys: list[Any]) -> dict[str, Any] | None:
         """
         Get string item definition for arrays of strings.
 

@@ -1,12 +1,13 @@
 """
 Output formatters for validation results.
 
-Supports text (with ANSI colors) and JSON output formats.
+Supports text (with ANSI colours) and JSON output formats.
 """
 
 import json
 import re
 import sys
+from typing import Any
 
 from .types import BatchResult, Severity, ValidationIssue, ValidationResult
 
@@ -42,11 +43,11 @@ class BaseFormatter:
 class PlainTextFormatter(BaseFormatter):
     """
     Formats validation results for terminal output.
-    Uses ANSI colors when stdout is a TTY.
+    Uses ANSI colours when stdout is a TTY.
     """
 
     # ANSI colour codes
-    COLORS = {
+    COLORS: dict[Severity | str, str] = {
         Severity.ERROR: "\033[91m",    # Red
         Severity.WARNING: "\033[93m",  # Yellow
         Severity.INFO: "\033[94m",     # Blue
@@ -56,7 +57,7 @@ class PlainTextFormatter(BaseFormatter):
         "GREEN": "\033[92m",
     }
 
-    def __init__(self, color: bool = True, colour: bool = None, quiet: bool = False):
+    def __init__(self, color: bool = True, colour: bool | None = None, quiet: bool = False):
         """
         Initialise formatter.
 
@@ -71,12 +72,10 @@ class PlainTextFormatter(BaseFormatter):
         self.color = color and sys.stdout.isatty()
         self.quiet = quiet
 
-    def _c(self, code: str) -> str:
+    def _c(self, code: Severity | str) -> str:
         """Get colour code if colours enabled."""
         if not self.color:
             return ""
-        if isinstance(code, Severity):
-            return self.COLORS.get(code, "")
         return self.COLORS.get(code, "")
 
     def format_result(self, result: ValidationResult) -> str:
@@ -139,7 +138,7 @@ class PlainTextFormatter(BaseFormatter):
 
         return "\n".join(parts)
 
-    def _format_value(self, value) -> str:
+    def _format_value(self, value: Any) -> str:
         """Format a value for display, truncating if too long."""
         if isinstance(value, list) and len(value) > 5:
             return f"[{', '.join(repr(v) for v in value[:5])}, ...] ({len(value)} items)"
@@ -183,7 +182,7 @@ class JSONFormatter(BaseFormatter):
 
     def __init__(self, pretty: bool = True):
         """
-        Initialize formatter.
+        Initialise formatter.
 
         Args:
             pretty: Pretty-print JSON with indentation.
@@ -227,7 +226,7 @@ class JSONFormatter(BaseFormatter):
             indent=2 if self.pretty else None,
         )
 
-    def _result_to_dict(self, result: ValidationResult) -> dict:
+    def _result_to_dict(self, result: ValidationResult) -> dict[str, Any]:
         """Convert ValidationResult to dict for JSON serialisation."""
         return {
             "file_path": str(result.file_path),
@@ -240,9 +239,9 @@ class JSONFormatter(BaseFormatter):
             "issues": [self._issue_to_dict(i) for i in result.issues],
         }
 
-    def _issue_to_dict(self, issue: ValidationIssue) -> dict:
+    def _issue_to_dict(self, issue: ValidationIssue) -> dict[str, Any]:
         """Convert ValidationIssue to dict for JSON serialisation."""
-        result = {
+        result: dict[str, Any] = {
             "severity": issue.severity.value,
             "code": issue.code,
             "message": issue.message,
@@ -254,7 +253,7 @@ class JSONFormatter(BaseFormatter):
             result["actual"] = self._serialize_value(issue.actual)
         return result
 
-    def _serialize_value(self, value) -> any:
+    def _serialize_value(self, value: Any) -> Any:
         """Serialise value for JSON, handling non-JSON types."""
         if isinstance(value, bytes):
             return f"<{len(value)} bytes>"
@@ -265,7 +264,7 @@ class JSONFormatter(BaseFormatter):
         return value
 
 
-def get_formatter(format_name: str, **kwargs) -> BaseFormatter:
+def get_formatter(format_name: str, **kwargs: Any) -> BaseFormatter:
     """
     Get formatter by name.
 
@@ -276,7 +275,7 @@ def get_formatter(format_name: str, **kwargs) -> BaseFormatter:
     Returns:
         Formatter instance.
     """
-    formatters = {
+    formatters: dict[str, type[BaseFormatter]] = {
         "text": PlainTextFormatter,
         "json": JSONFormatter,
     }

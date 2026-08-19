@@ -5,7 +5,9 @@ This module provides simple functions for validating mobileconfig files
 without the overhead of CLI argument parsing.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from .cache import ManifestCache
 from .loader import ManifestLoader
@@ -47,7 +49,7 @@ def validate_file(
 
 
 def validate_files(
-    paths: list[str | Path],
+    paths: Sequence[str | Path],
     offline: bool = False,
     cache_dir: Path | None = None,
 ) -> BatchResult:
@@ -99,7 +101,7 @@ def update_cache(
     return cache.update(force=force)
 
 
-def get_cache_status(cache_dir: Path | None = None) -> dict:
+def get_cache_status(cache_dir: Path | None = None) -> dict[str, Any]:
     """
     Get information about the manifest cache.
 

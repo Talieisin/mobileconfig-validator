@@ -11,6 +11,7 @@ import os
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class ManifestCache:
         offline: bool = False,
     ):
         """
-        Initialize the manifest cache.
+        Initialise the manifest cache.
 
         Args:
             cache_dir: Directory to store the cache. Defaults to ~/.cache/mobileconfig-validator/
@@ -157,9 +158,9 @@ class ManifestCache:
         shutil.rmtree(self.cache_dir)
         logger.info(f"Cleared cache at {self.cache_dir}")
 
-    def get_status(self) -> dict:
+    def get_status(self) -> dict[str, Any]:
         """Get cache status information."""
-        status = {
+        status: dict[str, Any] = {
             "cache_dir": str(self.cache_dir),
             "exists": self.repo_dir.exists(),
             "offline": self.offline,
@@ -310,18 +311,19 @@ class ManifestCache:
         except (ValueError, TypeError):
             return True
 
-    def _load_metadata(self) -> dict:
+    def _load_metadata(self) -> dict[str, Any]:
         """Load cache metadata from JSON file."""
         if not self.metadata_path.exists():
             return {}
 
         try:
             with open(self.metadata_path) as f:
-                return json.load(f)
+                metadata: dict[str, Any] = json.load(f)
+                return metadata
         except (json.JSONDecodeError, OSError):
             return {}
 
-    def _save_metadata(self, metadata: dict) -> None:
+    def _save_metadata(self, metadata: dict[str, Any]) -> None:
         """Save cache metadata to JSON file."""
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         with open(self.metadata_path, "w") as f:
