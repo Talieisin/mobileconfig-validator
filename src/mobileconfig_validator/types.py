@@ -40,7 +40,7 @@ class ValidationResult:
     file_path: Path
     payload_types: list[str] = field(default_factory=list)
     issues: list[ValidationIssue] = field(default_factory=list)
-    manifest_versions: dict = field(default_factory=dict)  # payload_type -> version
+    manifest_versions: dict[str, int] = field(default_factory=dict)  # payload_type -> version
 
     @property
     def is_valid(self) -> bool:

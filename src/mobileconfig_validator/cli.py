@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def expand_paths(paths: list[str]) -> list[Path]:
     """Expand glob patterns and ~ to list of files."""
-    files = []
+    files: list[Path] = []
     for pattern in paths:
         # Expand ~ to home directory
         expanded_pattern = Path(pattern).expanduser()
@@ -42,7 +42,7 @@ def expand_paths(paths: list[str]) -> list[Path]:
     return [f for f in files if f.exists() and f.suffix.lower() == ".mobileconfig"]
 
 
-def main(args: list[str] = None) -> int:
+def main(args: list[str] | None = None) -> int:
     """
     Main entry point for CLI.
 

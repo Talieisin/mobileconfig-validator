@@ -11,7 +11,7 @@ uv sync --all-extras
 # Run linter
 uv run ruff check src tests
 
-# Run type checker (has known issues, CI allows failure)
+# Run type checker (enforced in CI)
 uv run mypy src
 
 # Run all tests with coverage

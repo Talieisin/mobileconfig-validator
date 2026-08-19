@@ -6,6 +6,7 @@ Loads and parses plist manifests, providing lookup by PayloadType.
 
 import logging
 import plistlib
+from typing import Any
 
 from .cache import ManifestCache
 
@@ -37,15 +38,15 @@ class ManifestLoader:
         offline: bool = False,
     ):
         """
-        Initialize the manifest loader.
+        Initialise the manifest loader.
 
         Args:
             cache: ManifestCache instance. Created automatically if not provided.
             offline: If True, don't attempt network operations.
         """
         self.cache = cache or ManifestCache(offline=offline)
-        self._index: dict[str, dict] = {}  # domain -> {path, category, version, modified}
-        self._manifests: dict[str, dict] = {}  # domain -> parsed manifest (lazy loaded)
+        self._index: dict[str, dict[str, Any]] = {}  # domain -> {path, category, version, modified}
+        self._manifests: dict[str, dict[str, Any]] = {}  # domain -> parsed manifest (lazy loaded)
         self._index_loaded = False
 
     def load_index(self) -> None:
@@ -99,7 +100,7 @@ class ManifestLoader:
         self._index_loaded = True
         logger.debug(f"Loaded index with {len(self._index)} domains")
 
-    def get_manifest(self, payload_type: str) -> dict | None:
+    def get_manifest(self, payload_type: str) -> dict[str, Any] | None:
         """
         Get manifest for a PayloadType.
 
@@ -144,7 +145,7 @@ class ManifestLoader:
 
         try:
             with open(manifest_path, "rb") as f:
-                manifest = plistlib.load(f)
+                manifest: dict[str, Any] = plistlib.load(f)
             self._manifests[payload_type] = manifest
             return manifest
         except plistlib.InvalidFileException as e:
@@ -155,7 +156,10 @@ class ManifestLoader:
         """Get the version number for a manifest."""
         self.load_index()
         info = self._index.get(payload_type)
-        return info.get("version") if info else None
+        if not info:
+            return None
+        version = info.get("version")
+        return version if isinstance(version, int) else None
 
     def get_all_domains(self) -> list[str]:
         """Get list of all known domains."""
@@ -170,7 +174,7 @@ class ManifestLoader:
         # Case-insensitive check
         return any(d.lower() == payload_type.lower() for d in self._index)
 
-    def get_subkey_definitions(self, manifest: dict) -> dict[str, dict]:
+    def get_subkey_definitions(self, manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
         """
         Build a flat map of key names to their definitions from pfm_subkeys.
 
@@ -180,15 +184,15 @@ class ManifestLoader:
         Returns:
             Dict mapping key names to their pfm definitions.
         """
-        result = {}
+        result: dict[str, dict[str, Any]] = {}
         subkeys = manifest.get("pfm_subkeys", [])
         self._extract_subkeys(subkeys, result)
         return result
 
     def _extract_subkeys(
         self,
-        subkeys: list,
-        result: dict[str, dict],
+        subkeys: list[Any],
+        result: dict[str, dict[str, Any]],
         prefix: str = "",
     ) -> None:
         """
