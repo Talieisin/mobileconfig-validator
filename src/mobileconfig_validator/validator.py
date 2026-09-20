@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from .compatibility import APPLE_SCHEMA_RELEASE, MACOS_COMPATIBILITY
 from .loader import ManifestLoader
 from .types import Severity, ValidationIssue, ValidationResult
 
@@ -39,6 +40,11 @@ class SchemaValidator:
     - W001: Deprecated key (pfm_deprecated)
     - W002: Unknown key not in manifest
     - W003: Platform mismatch (pfm_platforms)
+    - W004: Deprecated for the selected macOS target
+    - W005: Key requires a newer macOS release than the selected target
+
+    TARGET COMPATIBILITY ERRORS:
+    - E010: Payload removed in the selected macOS target
 
     INFO (suggestions):
     - I002: Missing PayloadOrganization
@@ -72,15 +78,22 @@ class SchemaValidator:
         "date": type(None),  # datetime objects handled specially
     }
 
-    def __init__(self, loader: ManifestLoader | None = None, offline: bool = False):
+    def __init__(
+        self,
+        loader: ManifestLoader | None = None,
+        offline: bool = False,
+        target_macos: str | None = None,
+    ):
         """
         Initialise the validator.
 
         Args:
             loader: ManifestLoader instance. Created automatically if not provided.
             offline: If True, don't attempt network operations for cache.
+            target_macos: macOS release to validate compatibility against.
         """
         self.loader = loader or ManifestLoader(offline=offline)
+        self.target_macos = self._parse_version(target_macos) if target_macos else None
 
     def validate(self, path: Path) -> ValidationResult:
         """
@@ -228,6 +241,7 @@ class SchemaValidator:
 
             # Validate payload structure
             result.issues.extend(self._validate_payload_structure(payload, prefix))
+            result.issues.extend(self._validate_target_compatibility(payload, prefix))
 
             # Get manifest for this PayloadType
             manifest = self.loader.get_manifest(payload_type)
@@ -271,6 +285,110 @@ class SchemaValidator:
                 )
 
         return result
+
+    @staticmethod
+    def _parse_version(value: str) -> tuple[int, int, int]:
+        """Parse a numeric macOS version without accepting loose suffixes."""
+        if not re.fullmatch(r"\d+(?:\.\d+){0,2}", value):
+            raise ValueError(
+                f"Invalid macOS version {value!r}; expected MAJOR, MAJOR.MINOR, "
+                "or MAJOR.MINOR.PATCH"
+            )
+        parts = [int(part) for part in value.split(".")]
+        padded = (parts + [0, 0])[:3]
+        return padded[0], padded[1], padded[2]
+
+    def _validate_target_compatibility(
+        self, payload: dict[str, Any], prefix: str
+    ) -> list[ValidationIssue]:
+        """Apply the pinned Apple overlay for the selected target release."""
+        if self.target_macos is None:
+            return []
+
+        payload_type = payload.get("PayloadType")
+        if not isinstance(payload_type, str):
+            return []
+        rule = MACOS_COMPATIBILITY.get(payload_type)
+        if not rule:
+            return []
+
+        issues: list[ValidationIssue] = []
+        removed_in = rule.get("removed_in")
+        if removed_in and self.target_macos >= self._parse_version(removed_in):
+            issues.append(
+                ValidationIssue(
+                    severity=Severity.ERROR,
+                    code="E010",
+                    message=(
+                        f"Payload was removed in macOS {removed_in}; use "
+                        f"{rule['replacement']} ({APPLE_SCHEMA_RELEASE})"
+                    ),
+                    key_path=f"{prefix}.PayloadType",
+                    expected=f"supported on macOS {'.'.join(map(str, self.target_macos[:2]))}",
+                    actual=payload_type,
+                )
+            )
+
+        deprecated_in = rule.get("deprecated_in")
+        if deprecated_in and self.target_macos >= self._parse_version(deprecated_in):
+            issues.append(
+                ValidationIssue(
+                    severity=Severity.WARNING,
+                    code="W004",
+                    message=(
+                        f"Payload is deprecated in macOS {deprecated_in}; use "
+                        f"{rule['replacement']} ({APPLE_SCHEMA_RELEASE})"
+                    ),
+                    key_path=f"{prefix}.PayloadType",
+                    actual=payload_type,
+                )
+            )
+
+        for key_path, version in rule.get("deprecated_keys", {}).items():
+            value: Any = payload
+            present = True
+            for part in key_path.split("."):
+                if not isinstance(value, dict) or part not in value:
+                    present = False
+                    break
+                value = value[part]
+            if present and self.target_macos >= self._parse_version(version):
+                issues.append(
+                    ValidationIssue(
+                        severity=Severity.WARNING,
+                        code="W004",
+                        message=(
+                            f"Key is deprecated in macOS {version}; use "
+                            f"{rule['replacement']} ({APPLE_SCHEMA_RELEASE})"
+                        ),
+                        key_path=f"{prefix}.{key_path}",
+                    )
+                )
+
+        for key_path, version in rule.get("introduced_keys", {}).items():
+            value = payload
+            present = True
+            for part in key_path.split("."):
+                if not isinstance(value, dict) or part not in value:
+                    present = False
+                    break
+                value = value[part]
+            if present and self.target_macos < self._parse_version(version):
+                issues.append(
+                    ValidationIssue(
+                        severity=Severity.WARNING,
+                        code="W005",
+                        message=(
+                            f"Key requires macOS {version} or later "
+                            f"({APPLE_SCHEMA_RELEASE})"
+                        ),
+                        key_path=f"{prefix}.{key_path}",
+                        expected=f"macOS {version} or later",
+                        actual=f"macOS {'.'.join(map(str, self.target_macos[:2]))}",
+                    )
+                )
+
+        return issues
 
     def _validate_profile_structure(self, profile: dict[str, Any]) -> list[ValidationIssue]:
         """Validate the outer profile structure."""
@@ -420,6 +538,11 @@ class SchemaValidator:
         # Get ONLY immediate subkeys (not flattened) for this level
         subkeys = manifest.get("pfm_subkeys", [])
         immediate_defs = self._get_immediate_subkey_defs(subkeys)
+        overlay_keys = set(
+            MACOS_COMPATIBILITY.get(str(payload.get("PayloadType")), {}).get(
+                "introduced_keys", {}
+            )
+        )
 
         # Check required keys at this level only
         for key_name, key_def in immediate_defs.items():
@@ -452,6 +575,12 @@ class SchemaValidator:
             if key in immediate_defs:
                 key_def = immediate_defs[key]
                 issues.extend(self._validate_key(key_path, value, key_def))
+            elif key in overlay_keys:
+                # The pinned Apple release schema knows this key even when the
+                # independently maintained ProfileManifests cache has not
+                # caught up yet. Target-version handling occurs in the
+                # compatibility pass, so avoid a contradictory W002 here.
+                continue
             else:
                 # Unknown key
                 issues.append(

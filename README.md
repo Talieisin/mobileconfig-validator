@@ -34,6 +34,9 @@ uv run mobileconfig-validator *.mobileconfig
 # Strict mode for CI (exits 1 on errors)
 uv run mobileconfig-validator --strict profile.mobileconfig
 
+# Check Apple removals/deprecations for a deployment target
+uv run mobileconfig-validator --strict --target-macos 27.0 profile.mobileconfig
+
 # JSON output for tooling
 uv run mobileconfig-validator --format json profile.mobileconfig
 ```
@@ -78,6 +81,8 @@ print(f"Valid: {batch.valid_files}/{batch.total_files}")
 | W001 | Deprecated key |
 | W002 | Unknown key not in schema |
 | W003 | Platform mismatch (not macOS) |
+| W004 | Deprecated for the selected macOS target |
+| W005 | Key requires a newer macOS release than the selected target |
 
 ### Info (suggestions)
 

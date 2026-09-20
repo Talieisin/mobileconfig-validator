@@ -28,6 +28,11 @@ class TestCLIBasic:
         assert result.returncode == 0
         assert "1.0.0" in result.stdout
 
+    def test_invalid_target_macos_version(self):
+        result = run_cli("--target-macos", "27-beta")
+        assert result.returncode == 2
+        assert "Invalid macOS version" in result.stderr
+
     def test_no_args(self):
         """No arguments shows help or error."""
         result = run_cli()
