@@ -44,7 +44,7 @@ class SchemaValidator:
     - W005: Key requires a newer macOS release than the selected target
 
     TARGET COMPATIBILITY ERRORS:
-    - E010: Payload removed in the selected macOS target
+    - E010: Payload or key removed in the selected macOS target
 
     INFO (suggestions):
     - I002: Missing PayloadOrganization
@@ -325,8 +325,8 @@ class SchemaValidator:
                         f"({APPLE_SCHEMA_RELEASE})"
                     ),
                     key_path=f"{prefix}.PayloadType",
-                    expected=f"supported on macOS {'.'.join(map(str, self.target_macos[:2]))}",
-                    actual=payload_type,
+                    expected=f"macOS earlier than {removed_in}",
+                    actual=f"macOS {'.'.join(map(str, self.target_macos))}",
                 )
             )
 
@@ -363,6 +363,29 @@ class SchemaValidator:
                             f"({APPLE_SCHEMA_RELEASE})"
                         ),
                         key_path=f"{prefix}.{key_path}",
+                    )
+                )
+
+        for key_path, version in rule.get("removed_keys", {}).items():
+            value = payload
+            present = True
+            for part in key_path.split("."):
+                if not isinstance(value, dict) or part not in value:
+                    present = False
+                    break
+                value = value[part]
+            if present and self.target_macos >= self._parse_version(version):
+                issues.append(
+                    ValidationIssue(
+                        severity=Severity.ERROR,
+                        code="E010",
+                        message=(
+                            f"Key was removed in macOS {version}{replacement} "
+                            f"({APPLE_SCHEMA_RELEASE})"
+                        ),
+                        key_path=f"{prefix}.{key_path}",
+                        expected=f"macOS earlier than {version}",
+                        actual=f"macOS {'.'.join(map(str, self.target_macos))}",
                     )
                 )
 

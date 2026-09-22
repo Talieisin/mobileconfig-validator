@@ -142,7 +142,7 @@ Examples:
     parser.add_argument(
         "--target-macos",
         metavar="VERSION",
-        help="Check removals and deprecations for a target macOS release (for example 27.0)",
+        help="Check removals, deprecations and introduced keys for a macOS target (e.g. 27.0)",
     )
 
     parser.add_argument(
