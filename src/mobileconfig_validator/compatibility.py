@@ -2,10 +2,12 @@
 
 from typing import Any
 
-APPLE_SCHEMA_RELEASE = "apple/device-management release, reviewed 2026-09-20"
+# https://github.com/apple/device-management/commit/09f249a06e7e3289930bf6d05f38fb562f748ebf
+APPLE_SCHEMA_RELEASE = "apple/device-management 09f249a06e7e3289930bf6d05f38fb562f748ebf"
 
 MACOS_COMPATIBILITY: dict[str, dict[str, Any]] = {
     "com.apple.SoftwareUpdate": {
+        "deprecated_in": "26.0",
         "removed_in": "27.0",
         "replacement": "com.apple.configuration.softwareupdate.settings",
     },

@@ -93,7 +93,7 @@ class SchemaValidator:
             target_macos: macOS release to validate compatibility against.
         """
         self.loader = loader or ManifestLoader(offline=offline)
-        self.target_macos = self._parse_version(target_macos) if target_macos else None
+        self.target_macos = self._parse_version(target_macos) if target_macos is not None else None
 
     def validate(self, path: Path) -> ValidationResult:
         """
@@ -312,6 +312,7 @@ class SchemaValidator:
         if not rule:
             return []
 
+        replacement = f"; use {rule['replacement']}" if rule.get("replacement") else ""
         issues: list[ValidationIssue] = []
         removed_in = rule.get("removed_in")
         if removed_in and self.target_macos >= self._parse_version(removed_in):
@@ -320,8 +321,8 @@ class SchemaValidator:
                     severity=Severity.ERROR,
                     code="E010",
                     message=(
-                        f"Payload was removed in macOS {removed_in}; use "
-                        f"{rule['replacement']} ({APPLE_SCHEMA_RELEASE})"
+                        f"Payload was removed in macOS {removed_in}{replacement} "
+                        f"({APPLE_SCHEMA_RELEASE})"
                     ),
                     key_path=f"{prefix}.PayloadType",
                     expected=f"supported on macOS {'.'.join(map(str, self.target_macos[:2]))}",
@@ -336,8 +337,8 @@ class SchemaValidator:
                     severity=Severity.WARNING,
                     code="W004",
                     message=(
-                        f"Payload is deprecated in macOS {deprecated_in}; use "
-                        f"{rule['replacement']} ({APPLE_SCHEMA_RELEASE})"
+                        f"Payload is deprecated in macOS {deprecated_in}{replacement} "
+                        f"({APPLE_SCHEMA_RELEASE})"
                     ),
                     key_path=f"{prefix}.PayloadType",
                     actual=payload_type,
@@ -358,8 +359,8 @@ class SchemaValidator:
                         severity=Severity.WARNING,
                         code="W004",
                         message=(
-                            f"Key is deprecated in macOS {version}; use "
-                            f"{rule['replacement']} ({APPLE_SCHEMA_RELEASE})"
+                            f"Key is deprecated in macOS {version}{replacement} "
+                            f"({APPLE_SCHEMA_RELEASE})"
                         ),
                         key_path=f"{prefix}.{key_path}",
                     )
@@ -542,7 +543,7 @@ class SchemaValidator:
             MACOS_COMPATIBILITY.get(str(payload.get("PayloadType")), {}).get(
                 "introduced_keys", {}
             )
-        )
+        ) if self.target_macos is not None else set()
 
         # Check required keys at this level only
         for key_name, key_def in immediate_defs.items():

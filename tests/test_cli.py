@@ -157,3 +157,25 @@ class TestCLICacheCommands:
         )
         # Should work if cache exists, fail if not
         assert result.returncode in (0, 1)
+
+
+def test_empty_target_is_rejected():
+    result = run_cli("--target-macos", "")
+    assert result.returncode == 2
+    assert "Invalid macOS version" in result.stderr
+
+
+def test_cli_removed_payload(tmp_path):
+    import plistlib
+    profile = {"PayloadType": "Configuration", "PayloadVersion": 1,
+               "PayloadIdentifier": "com.example.test",
+               "PayloadUUID": "00000000-0000-4000-8000-000000000001",
+               "PayloadContent": [{"PayloadType": "com.apple.SoftwareUpdate",
+                                   "PayloadVersion": 1,
+                                   "PayloadIdentifier": "com.example.test.update",
+                                   "PayloadUUID": "00000000-0000-4000-8000-000000000002"}]}
+    path = tmp_path / "update.mobileconfig"
+    path.write_bytes(plistlib.dumps(profile))
+    result = run_cli(str(path), "--target-macos", "27", "--strict")
+    assert result.returncode == 1
+    assert "E010" in result.stdout

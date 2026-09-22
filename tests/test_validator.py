@@ -4,6 +4,8 @@ import plistlib
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from mobileconfig_validator import Severity, ValidationResult, validate_file, validate_files
 from mobileconfig_validator.types import ValidationIssue
 from mobileconfig_validator.validator import SchemaValidator
@@ -314,3 +316,43 @@ class TestMacOSTargetCompatibility:
             assert "Invalid macOS version" in str(exc)
         else:
             raise AssertionError("invalid target version was accepted")
+
+
+@pytest.mark.parametrize("version", ["", "27-beta", "27.0.0.1"])
+def test_invalid_explicit_target(version):
+    with pytest.raises(ValueError, match="Invalid macOS version"):
+        SchemaValidator(loader=CompatibilityLoader(), target_macos=version)
+
+
+@pytest.mark.parametrize("version, deprecated, removed", [
+    (None, False, False), ("25.10", False, False),
+    ("26", True, False), ("26.10", True, False), ("27", True, True),
+])
+def test_software_update_boundaries(tmp_path, version, deprecated, removed):
+    path = write_profile(tmp_path, {"PayloadType": "com.apple.SoftwareUpdate"})
+    codes = {i.code for i in SchemaValidator(
+        loader=CompatibilityLoader(), target_macos=version
+    ).validate(path).issues}
+    assert ("W004" in codes) == deprecated
+    assert ("E010" in codes) == removed
+
+
+def test_no_target_preserves_unknown_key_warning(tmp_path):
+    path = write_profile(tmp_path, {
+        "PayloadType": "com.apple.loginwindow",
+        "ForceWifiConfigurationOnLockScreen": True,
+    })
+    issues = SchemaValidator(loader=CompatibilityLoader()).validate(path).issues
+    assert any(i.code == "W002" and "ForceWifi" in i.key_path for i in issues)
+
+
+def test_overlay_without_replacement(tmp_path, monkeypatch):
+    from mobileconfig_validator.compatibility import MACOS_COMPATIBILITY
+    monkeypatch.setitem(MACOS_COMPATIBILITY, "com.example.retired", {
+        "removed_in": "27", "deprecated_in": "26",
+        "deprecated_keys": {"Example": "26"},
+    })
+    path = write_profile(tmp_path, {"PayloadType": "com.example.retired", "Example": True})
+    issues = SchemaValidator(loader=CompatibilityLoader(), target_macos="27").validate(path).issues
+    assert {"E010", "W004"} <= {i.code for i in issues}
+    assert all("None" not in i.message for i in issues)

@@ -160,7 +160,7 @@ Examples:
 
     parsed = parser.parse_args(args)
 
-    if parsed.target_macos:
+    if parsed.target_macos is not None:
         try:
             SchemaValidator._parse_version(parsed.target_macos)
         except ValueError as exc:
