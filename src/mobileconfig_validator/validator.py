@@ -563,9 +563,8 @@ class SchemaValidator:
         # Get ONLY immediate subkeys (not flattened) for this level
         subkeys = manifest.get("pfm_subkeys", [])
         if self.target_macos is not None:
-            overlay_paths = MACOS_COMPATIBILITY.get(str(payload.get("PayloadType")), {}).get(
-                "introduced_keys", {}
-            )
+            overlay = MACOS_COMPATIBILITY.get(str(payload.get("PayloadType")), {})
+            overlay_paths = overlay.get("introduced_keys", {})
             # Supplement a private copy of the manifest at each dotted path.
             # Preserve existing definitions and validation of unrelated siblings.
             subkeys = copy.deepcopy(subkeys)
@@ -580,6 +579,10 @@ class SchemaValidator:
                         if index < len(parts) - 1:
                             definition["pfm_type"] = "dictionary"
                         current.append(definition)
+                    if index == len(parts) - 1:
+                        pinned_schema = overlay["introduced_key_schema"][overlay_path]
+                        for name, metadata in pinned_schema.items():
+                            definition.setdefault(name, copy.deepcopy(metadata))
                     current = definition.setdefault("pfm_subkeys", [])
         immediate_defs = self._get_immediate_subkey_defs(subkeys)
 
@@ -845,6 +848,11 @@ class SchemaValidator:
                 string_item_def = self._get_string_array_item_def(item_subkeys)
 
                 for idx, item in enumerate(value):
+                    if string_item_def and self.target_macos is not None:
+                        issues.extend(self._validate_key(
+                            f"{key_path}[{idx}]", item, string_item_def
+                        ))
+                        continue
                     if isinstance(item, dict):
                         # Check required keys for each array item
                         for item_key_name, item_key_def in item_defs.items():
@@ -880,7 +888,7 @@ class SchemaValidator:
                                     )
                                 )
                     elif isinstance(item, str) and string_item_def:
-                        # Validate string items against pfm_range_list if defined
+                        # Preserve the existing structural-only path when no target is set.
                         item_range_list = string_item_def.get("pfm_range_list")
                         if item_range_list and item not in item_range_list:
                             issues.append(

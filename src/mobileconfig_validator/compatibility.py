@@ -61,6 +61,10 @@ MACOS_COMPATIBILITY: dict[str, dict[str, Any]] = {
             "ForceWifiConfigurationOnLockScreen": "27.0",
             "ForceCaptivePortalConnectionFromLockScreen": "27.0",
         },
+        "introduced_key_schema": {
+            "ForceWifiConfigurationOnLockScreen": {"pfm_type": "boolean"},
+            "ForceCaptivePortalConnectionFromLockScreen": {"pfm_type": "boolean"},
+        },
     },
     "com.apple.applicationaccess": {
         "deprecated_keys": dict.fromkeys(SOFTWARE_UPDATE_RESTRICTION_KEYS, "26.0"),
@@ -72,6 +76,13 @@ MACOS_COMPATIBILITY: dict[str, dict[str, Any]] = {
         "introduced_keys": {
             "PlatformSSO.AllowWebLoginPasswordSync": "27.0",
             "PlatformSSO.WebLoginURLAllowList": "27.0",
+        },
+        "introduced_key_schema": {
+            "PlatformSSO.AllowWebLoginPasswordSync": {"pfm_type": "boolean"},
+            "PlatformSSO.WebLoginURLAllowList": {
+                "pfm_type": "array",
+                "pfm_subkeys": [{"pfm_name": "Hosts", "pfm_type": "string"}],
+            },
         },
     },
 }

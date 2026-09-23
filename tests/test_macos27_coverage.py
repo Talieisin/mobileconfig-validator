@@ -117,3 +117,40 @@ def test_public_api_rejects_invalid_target(tmp_path, batch, target):
             validate_files([path], offline=True, cache_dir=tmp_path, target_macos=target)
         else:
             validate_file(path, offline=True, cache_dir=tmp_path, target_macos=target)
+
+
+@pytest.mark.parametrize("payload_type,key", [
+    ("com.apple.loginwindow", "ForceWifiConfigurationOnLockScreen"),
+    ("com.apple.loginwindow", "ForceCaptivePortalConnectionFromLockScreen"),
+    ("com.apple.extensiblesso", "PlatformSSO.AllowWebLoginPasswordSync"),
+])
+@pytest.mark.parametrize("value", ["true", [], 42])
+def test_introduced_booleans_reject_wrong_types(tmp_path, payload_type, key, value):
+    payload = {"PayloadType": payload_type}
+    if "." in key:
+        parent, child = key.split(".")
+        payload[parent] = {child: value}
+    else:
+        payload[key] = value
+    path = write_profile(tmp_path, payload)
+    result = SchemaValidator(loader=CompatibilityLoader(), target_macos="27").validate(path)
+    assert any(i.code == "E003" and i.key_path.endswith(key) for i in result.issues)
+
+
+@pytest.mark.parametrize("value,error_path", [
+    ("example.com", "PlatformSSO.WebLoginURLAllowList"),
+    ([1], "PlatformSSO.WebLoginURLAllowList[0]"),
+    ([{}], "PlatformSSO.WebLoginURLAllowList[0]"),
+    ([False], "PlatformSSO.WebLoginURLAllowList[0]"),
+    (["example.com"], None),
+    ([], None),
+])
+def test_introduced_sso_array_and_item_types(tmp_path, value, error_path):
+    path = write_profile(tmp_path, {
+        "PayloadType": "com.apple.extensiblesso", "PlatformSSO": {"WebLoginURLAllowList": value},
+    })
+    result = SchemaValidator(loader=CompatibilityLoader(), target_macos="27").validate(path)
+    errors = [i for i in result.issues if i.code == "E003"]
+    assert bool(errors) == (error_path is not None)
+    if error_path:
+        assert errors[0].key_path.endswith(error_path)
