@@ -64,6 +64,36 @@ def test_new_platform_sso_keys(tmp_path, key, value):
         assert bool(introduced) == (version == "26.6")
         if introduced:
             assert introduced[0].key_path == f"PayloadContent[0].PlatformSSO.{key}"
+        if version is not None:
+            assert not any(i.code == "W002" for i in issues)
+
+
+@pytest.mark.parametrize("old_parent", [False, True])
+def test_nested_overlay_retains_unknown_sibling_checks(tmp_path, old_parent):
+    class Loader(CompatibilityLoader):
+        def get_manifest(self, payload_type):
+            return {"pfm_subkeys": [{
+                "pfm_name": "PlatformSSO", "pfm_type": "dictionary",
+                "pfm_subkeys": [{"pfm_name": "OldKey", "pfm_type": "boolean"}],
+            }] if old_parent else []}
+
+    path = write_profile(tmp_path, {
+        "PayloadType": "com.apple.extensiblesso",
+        "PlatformSSO": {"AllowWebLoginPasswordSync": True, "Unexpected": True},
+        "Unrelated": True,
+    })
+    for version in (None, "26.6.1", "27"):
+        issues = SchemaValidator(loader=Loader(), target_macos=version).validate(path).issues
+        unknown = {i.key_path for i in issues if i.code == "W002"}
+        assert "PayloadContent[0].Unrelated" in unknown
+        if version is None:
+            assert ("PayloadContent[0].PlatformSSO.AllowWebLoginPasswordSync" if old_parent
+                    else "PayloadContent[0].PlatformSSO") in unknown
+        else:
+            assert unknown == {"PayloadContent[0].Unrelated",
+                               "PayloadContent[0].PlatformSSO.Unexpected"}
+        if version == "26.6.1":
+            assert next(i.actual for i in issues if i.code == "W005") == "macOS 26.6.1"
 
 
 @pytest.mark.parametrize("batch", [False, True])

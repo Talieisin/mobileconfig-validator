@@ -4,6 +4,7 @@ Core validation logic for mobileconfig files.
 Validates payloads against ProfileManifests schemas.
 """
 
+import copy
 import logging
 import plistlib
 import re
@@ -408,7 +409,7 @@ class SchemaValidator:
                         ),
                         key_path=f"{prefix}.{key_path}",
                         expected=f"macOS {version} or later",
-                        actual=f"macOS {'.'.join(map(str, self.target_macos[:2]))}",
+                        actual=f"macOS {'.'.join(map(str, self.target_macos))}",
                     )
                 )
 
@@ -561,12 +562,26 @@ class SchemaValidator:
 
         # Get ONLY immediate subkeys (not flattened) for this level
         subkeys = manifest.get("pfm_subkeys", [])
-        immediate_defs = self._get_immediate_subkey_defs(subkeys)
-        overlay_keys = set(
-            MACOS_COMPATIBILITY.get(str(payload.get("PayloadType")), {}).get(
+        if self.target_macos is not None:
+            overlay_paths = MACOS_COMPATIBILITY.get(str(payload.get("PayloadType")), {}).get(
                 "introduced_keys", {}
             )
-        ) if self.target_macos is not None else set()
+            # Supplement a private copy of the manifest at each dotted path.
+            # Preserve existing definitions and validation of unrelated siblings.
+            subkeys = copy.deepcopy(subkeys)
+            for overlay_path in overlay_paths:
+                current = subkeys
+                parts = overlay_path.split(".")
+                for index, part in enumerate(parts):
+                    definitions = self._get_immediate_subkey_defs(current)
+                    definition = definitions.get(part)
+                    if definition is None:
+                        definition = {"pfm_name": part}
+                        if index < len(parts) - 1:
+                            definition["pfm_type"] = "dictionary"
+                        current.append(definition)
+                    current = definition.setdefault("pfm_subkeys", [])
+        immediate_defs = self._get_immediate_subkey_defs(subkeys)
 
         # Check required keys at this level only
         for key_name, key_def in immediate_defs.items():
@@ -599,12 +614,6 @@ class SchemaValidator:
             if key in immediate_defs:
                 key_def = immediate_defs[key]
                 issues.extend(self._validate_key(key_path, value, key_def))
-            elif key in overlay_keys:
-                # The pinned Apple release schema knows this key even when the
-                # independently maintained ProfileManifests cache has not
-                # caught up yet. Target-version handling occurs in the
-                # compatibility pass, so avoid a contradictory W002 here.
-                continue
             else:
                 # Unknown key
                 issues.append(
