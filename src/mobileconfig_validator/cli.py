@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .api import get_cache_status, update_cache, validate_files
 from .formatter import get_formatter
+from .validator import SchemaValidator
 
 # Set up logging
 logging.basicConfig(
@@ -139,6 +140,12 @@ Examples:
     )
 
     parser.add_argument(
+        "--target-macos",
+        metavar="VERSION",
+        help="Check removals, deprecations and introduced keys for a macOS target (e.g. 27.0)",
+    )
+
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -152,6 +159,12 @@ Examples:
     )
 
     parsed = parser.parse_args(args)
+
+    if parsed.target_macos is not None:
+        try:
+            SchemaValidator._parse_version(parsed.target_macos)
+        except ValueError as exc:
+            parser.error(str(exc))
 
     # Set log level
     if parsed.verbose:
@@ -214,6 +227,7 @@ Examples:
             files,
             offline=parsed.offline,
             cache_dir=parsed.cache_dir,
+            target_macos=parsed.target_macos,
         )
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)

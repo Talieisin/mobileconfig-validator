@@ -15,6 +15,8 @@
 			<string>dddddddd-dddd-dddd-dddd-dddddddddddd</string>
 			<key>PayloadVersion</key>
 			<integer>1</integer>
+			<key>moduleName</key>
+			<string>Flurry</string>
 			<key>idleTime</key>
 			<integer>600</integer>
 			<key>askForPassword</key>

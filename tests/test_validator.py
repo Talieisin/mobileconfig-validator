@@ -1,9 +1,45 @@
 """Tests for the mobileconfig validator."""
 
+import plistlib
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from mobileconfig_validator import Severity, ValidationResult, validate_file, validate_files
 from mobileconfig_validator.types import ValidationIssue
+from mobileconfig_validator.validator import SchemaValidator
+
+
+class CompatibilityLoader:
+    """Small manifest loader that isolates target-version checks."""
+
+    def get_manifest(self, payload_type: str) -> dict[str, Any]:
+        return {"pfm_platforms": ["macOS"], "pfm_subkeys": []}
+
+    def get_manifest_version(self, payload_type: str) -> None:
+        return None
+
+
+def write_profile(tmp_path: Path, payload: dict[str, Any]) -> Path:
+    profile = {
+        "PayloadType": "Configuration",
+        "PayloadVersion": 1,
+        "PayloadIdentifier": "com.example.test",
+        "PayloadUUID": "00000000-0000-4000-8000-000000000001",
+        "PayloadContent": [
+            {
+                "PayloadVersion": 1,
+                "PayloadIdentifier": "com.example.test.payload",
+                "PayloadUUID": "00000000-0000-4000-8000-000000000002",
+                **payload,
+            }
+        ],
+    }
+    path = tmp_path / "compatibility.mobileconfig"
+    with path.open("wb") as stream:
+        plistlib.dump(profile, stream)
+    return path
 
 
 class TestValidationResult:
@@ -200,3 +236,123 @@ class TestWarningFixtures:
         # But should have a warning
         warning_codes = {i.code for i in result.issues if i.severity == Severity.WARNING}
         assert "W002" in warning_codes
+
+
+class TestMacOSTargetCompatibility:
+    def test_software_update_removed_only_on_macos_27(self, tmp_path: Path) -> None:
+        path = write_profile(
+            tmp_path,
+            {"PayloadType": "com.apple.SoftwareUpdate", "AutomaticDownload": True},
+        )
+
+        macos_26 = SchemaValidator(
+            loader=CompatibilityLoader(), target_macos="26.6"
+        ).validate(path)
+        macos_27 = SchemaValidator(
+            loader=CompatibilityLoader(), target_macos="27.0"
+        ).validate(path)
+
+        assert "E010" not in {issue.code for issue in macos_26.issues}
+        assert "E010" in {issue.code for issue in macos_27.issues}
+
+    def test_passcode_payload_is_deprecated_on_macos_27(self, tmp_path: Path) -> None:
+        path = write_profile(
+            tmp_path,
+            {"PayloadType": "com.apple.mobiledevice.passwordpolicy", "minLength": 15},
+        )
+        result = SchemaValidator(
+            loader=CompatibilityLoader(), target_macos="27"
+        ).validate(path)
+        assert "W004" in {issue.code for issue in result.issues}
+
+    def test_pppc_migratable_service_is_deprecated(self, tmp_path: Path) -> None:
+        path = write_profile(
+            tmp_path,
+            {
+                "PayloadType": "com.apple.TCC.configuration-profile-policy",
+                "Services": {"Camera": [{"Identifier": "com.example.app"}]},
+            },
+        )
+        result = SchemaValidator(
+            loader=CompatibilityLoader(), target_macos="27.0"
+        ).validate(path)
+        deprecated_paths = {
+            issue.key_path for issue in result.issues if issue.code == "W004"
+        }
+        assert "PayloadContent[0].Services.Camera" in deprecated_paths
+
+    def test_loginwindow_network_recovery_keys_require_macos_27(
+        self, tmp_path: Path
+    ) -> None:
+        path = write_profile(
+            tmp_path,
+            {
+                "PayloadType": "com.apple.loginwindow",
+                "ForceWifiConfigurationOnLockScreen": True,
+                "ForceCaptivePortalConnectionFromLockScreen": True,
+            },
+        )
+
+        macos_26 = SchemaValidator(
+            loader=CompatibilityLoader(), target_macos="26.6"
+        ).validate(path)
+        macos_27 = SchemaValidator(
+            loader=CompatibilityLoader(), target_macos="27.0"
+        ).validate(path)
+
+        assert len([issue for issue in macos_26.issues if issue.code == "W005"]) == 2
+        assert "W005" not in {issue.code for issue in macos_27.issues}
+        for result in (macos_26, macos_27):
+            assert not {
+                issue.key_path
+                for issue in result.issues
+                if issue.code == "W002" and "Force" in issue.key_path
+            }
+
+    def test_invalid_target_version_fails_fast(self) -> None:
+        try:
+            SchemaValidator(loader=CompatibilityLoader(), target_macos="27-beta")
+        except ValueError as exc:
+            assert "Invalid macOS version" in str(exc)
+        else:
+            raise AssertionError("invalid target version was accepted")
+
+
+@pytest.mark.parametrize("version", ["", "27-beta", "27.0.0.1"])
+def test_invalid_explicit_target(version):
+    with pytest.raises(ValueError, match="Invalid macOS version"):
+        SchemaValidator(loader=CompatibilityLoader(), target_macos=version)
+
+
+@pytest.mark.parametrize("version, deprecated, removed", [
+    (None, False, False), ("25.10", False, False),
+    ("26", True, False), ("26.10", True, False), ("27", True, True),
+])
+def test_software_update_boundaries(tmp_path, version, deprecated, removed):
+    path = write_profile(tmp_path, {"PayloadType": "com.apple.SoftwareUpdate"})
+    codes = {i.code for i in SchemaValidator(
+        loader=CompatibilityLoader(), target_macos=version
+    ).validate(path).issues}
+    assert ("W004" in codes) == deprecated
+    assert ("E010" in codes) == removed
+
+
+def test_no_target_preserves_unknown_key_warning(tmp_path):
+    path = write_profile(tmp_path, {
+        "PayloadType": "com.apple.loginwindow",
+        "ForceWifiConfigurationOnLockScreen": True,
+    })
+    issues = SchemaValidator(loader=CompatibilityLoader()).validate(path).issues
+    assert any(i.code == "W002" and "ForceWifi" in i.key_path for i in issues)
+
+
+def test_overlay_without_replacement(tmp_path, monkeypatch):
+    from mobileconfig_validator.compatibility import MACOS_COMPATIBILITY
+    monkeypatch.setitem(MACOS_COMPATIBILITY, "com.example.retired", {
+        "removed_in": "27", "deprecated_in": "26",
+        "deprecated_keys": {"Example": "26"},
+    })
+    path = write_profile(tmp_path, {"PayloadType": "com.example.retired", "Example": True})
+    issues = SchemaValidator(loader=CompatibilityLoader(), target_macos="27").validate(path).issues
+    assert {"E010", "W004"} <= {i.code for i in issues}
+    assert all("None" not in i.message for i in issues)
