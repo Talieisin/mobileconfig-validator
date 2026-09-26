@@ -19,6 +19,7 @@ def validate_file(
     path: str | Path,
     offline: bool = False,
     cache_dir: Path | None = None,
+    target_macos: str | None = None,
 ) -> ValidationResult:
     """
     Validate a single mobileconfig file.
@@ -29,6 +30,7 @@ def validate_file(
         path: Path to the mobileconfig file.
         offline: If True, don't attempt to update the manifest cache.
         cache_dir: Optional custom cache directory.
+        target_macos: Optional target macOS version for compatibility checks.
 
     Returns:
         ValidationResult with any issues found.
@@ -44,7 +46,9 @@ def validate_file(
     path = Path(path)
     cache = ManifestCache(cache_dir=cache_dir, offline=offline)
     loader = ManifestLoader(cache=cache, offline=offline)
-    validator = SchemaValidator(loader=loader, offline=offline)
+    validator = SchemaValidator(
+        loader=loader, offline=offline, target_macos=target_macos
+    )
     return validator.validate(path)
 
 
@@ -52,6 +56,7 @@ def validate_files(
     paths: Sequence[str | Path],
     offline: bool = False,
     cache_dir: Path | None = None,
+    target_macos: str | None = None,
 ) -> BatchResult:
     """
     Validate multiple mobileconfig files.
@@ -62,6 +67,7 @@ def validate_files(
         paths: List of paths to mobileconfig files.
         offline: If True, don't attempt to update the manifest cache.
         cache_dir: Optional custom cache directory.
+        target_macos: Optional target macOS version for compatibility checks.
 
     Returns:
         BatchResult containing all validation results.
@@ -74,7 +80,9 @@ def validate_files(
     """
     cache = ManifestCache(cache_dir=cache_dir, offline=offline)
     loader = ManifestLoader(cache=cache, offline=offline)
-    validator = SchemaValidator(loader=loader, offline=offline)
+    validator = SchemaValidator(
+        loader=loader, offline=offline, target_macos=target_macos
+    )
 
     batch = BatchResult()
     for path in paths:

@@ -34,6 +34,9 @@ uv run mobileconfig-validator *.mobileconfig
 # Strict mode for CI (exits 1 on errors)
 uv run mobileconfig-validator --strict profile.mobileconfig
 
+# Check Apple removals/deprecations for a deployment target
+uv run mobileconfig-validator --strict --target-macos 27.0 profile.mobileconfig
+
 # JSON output for tooling
 uv run mobileconfig-validator --format json profile.mobileconfig
 ```
@@ -70,6 +73,7 @@ print(f"Valid: {batch.valid_files}/{batch.total_files}")
 | E007 | Invalid/missing PayloadUUID format |
 | E008 | PayloadVersion not 1 |
 | E009 | Duplicate PayloadUUID |
+| E010 | Payload or key removed in the selected macOS target |
 
 ### Warnings (valid but suboptimal)
 
@@ -78,6 +82,8 @@ print(f"Valid: {batch.valid_files}/{batch.total_files}")
 | W001 | Deprecated key |
 | W002 | Unknown key not in schema |
 | W003 | Platform mismatch (not macOS) |
+| W004 | Deprecated for the selected macOS target |
+| W005 | Key requires a newer macOS release than the selected target |
 
 ### Info (suggestions)
 
@@ -93,7 +99,7 @@ usage: mobileconfig-validator [-h] [--strict] [--warnings-as-errors]
                               [--format {text,json}] [--quiet] [--no-colour]
                               [--update-cache] [--cache-status] [--clear-cache]
                               [--cache-dir PATH] [--offline] [--verbose]
-                              [--version]
+                              [--target-macos VERSION] [--version]
                               [files ...]
 
 Options:
@@ -106,10 +112,13 @@ Options:
   --cache-status        Show cache status and exit
   --clear-cache         Clear ProfileManifests cache and exit
   --cache-dir PATH      Custom cache directory
+  --target-macos VERSION Check removals, deprecations and introduced keys for macOS
   --offline             Don't attempt network operations
   --verbose, -v         Enable verbose logging
   --version             Show version and exit
 ```
+
+The target overlay covers the macOS profile changes in Apple's [Release-v27.0](https://github.com/apple/device-management/blob/09f249a06e7e3289930bf6d05f38fb562f748ebf/CHANGES.md): payload deprecations/removal, removed software-update restriction and logging keys, the five deprecated PPPC services, and new login-window/Platform SSO keys. It is a pinned supplement to ProfileManifests, not a complete historical Apple schema or a DDM declaration validator. Omitting the target preserves structural-only validation.
 
 ## Cache Management
 
