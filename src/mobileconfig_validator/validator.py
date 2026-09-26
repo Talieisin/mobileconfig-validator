@@ -586,8 +586,8 @@ class SchemaValidator:
                         for name, metadata in pinned_schema.items():
                             if name not in definition:
                                 definition[name] = copy.deepcopy(metadata)
-                                if name == "pfm_subkeys":
-                                    definition["_compatibility_item_schema"] = True
+                            if name == "pfm_subkeys" and definition[name] == metadata:
+                                definition["_compatibility_item_schema"] = True
                     current = definition.setdefault("pfm_subkeys", [])
         immediate_defs = self._get_immediate_subkey_defs(subkeys)
 

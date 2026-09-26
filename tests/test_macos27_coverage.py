@@ -150,11 +150,22 @@ def test_introduced_booleans_reject_wrong_types(tmp_path, payload_type, key, val
     (["example.com"], None),
     ([], None),
 ])
-def test_introduced_sso_array_and_item_types(tmp_path, value, error_path):
+@pytest.mark.parametrize("predefined", [False, True])
+def test_introduced_sso_array_and_item_types(tmp_path, value, error_path, predefined):
+    class Loader(CompatibilityLoader):
+        def get_manifest(self, payload_type):
+            return {"pfm_subkeys": [{
+                "pfm_name": "PlatformSSO", "pfm_type": "dictionary",
+                "pfm_subkeys": [{
+                    "pfm_name": "WebLoginURLAllowList", "pfm_type": "array",
+                    "pfm_subkeys": [{"pfm_name": "Hosts", "pfm_type": "string"}],
+                }],
+            }] if predefined else []}
+
     path = write_profile(tmp_path, {
         "PayloadType": "com.apple.extensiblesso", "PlatformSSO": {"WebLoginURLAllowList": value},
     })
-    result = SchemaValidator(loader=CompatibilityLoader(), target_macos="27").validate(path)
+    result = SchemaValidator(loader=Loader(), target_macos="27").validate(path)
     errors = [i for i in result.issues if i.code == "E003"]
     assert bool(errors) == (error_path is not None)
     if error_path:
