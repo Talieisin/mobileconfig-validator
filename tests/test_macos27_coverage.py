@@ -158,7 +158,11 @@ def test_introduced_sso_array_and_item_types(tmp_path, value, error_path, predef
                 "pfm_name": "PlatformSSO", "pfm_type": "dictionary",
                 "pfm_subkeys": [{
                     "pfm_name": "WebLoginURLAllowList", "pfm_type": "array",
-                    "pfm_subkeys": [{"pfm_name": "Hosts", "pfm_type": "string"}],
+                    "pfm_subkeys": [{
+                        "pfm_description": "A host or host prefix.",
+                        "pfm_macos_min": "27.0", "pfm_name": "Hosts",
+                        "pfm_platforms": ["macOS"], "pfm_type": "string",
+                    }],
                 }],
             }] if predefined else []}
 
