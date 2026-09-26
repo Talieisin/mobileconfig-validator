@@ -69,9 +69,19 @@ MACOS_COMPATIBILITY: dict[str, dict[str, Any]] = {
     "com.apple.applicationaccess": {
         "deprecated_keys": dict.fromkeys(SOFTWARE_UPDATE_RESTRICTION_KEYS, "26.0"),
         "removed_keys": dict.fromkeys(SOFTWARE_UPDATE_RESTRICTION_KEYS, "27.0"),
+        "removed_key_schema": {
+            key: {"pfm_type": "integer" if key.startswith("enforced") else "boolean"}
+            for key in SOFTWARE_UPDATE_RESTRICTION_KEYS
+        },
         "replacement": "com.apple.configuration.softwareupdate.settings",
     },
-    "com.apple.system.logging": {"removed_keys": {"Processes": "27.0"}},
+    "com.apple.system.logging": {
+        "removed_keys": {"Processes": "27.0"},
+        # Historical Apple schema 67045e2fa06f528b196c01edee6a8bf88b844beb:
+        # Processes was a dictionary with arbitrary keys/values, marked "Not to be used".
+        # Recognition is not a recommendation to use it on older releases.
+        "removed_key_schema": {"Processes": {"pfm_type": "dictionary"}},
+    },
     "com.apple.extensiblesso": {
         "introduced_keys": {
             "PlatformSSO.AllowWebLoginPasswordSync": "27.0",

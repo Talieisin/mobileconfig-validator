@@ -33,11 +33,16 @@ def test_deprecated_payload_boundaries(tmp_path, payload_type):
     )
 ] + [("com.apple.system.logging", "Processes")])
 def test_removed_key_boundaries_and_paths(tmp_path, payload_type, key):
-    path = write_profile(tmp_path, {"PayloadType": payload_type, key: False})
+    value = {"example": {"arbitrary": True}} if key == "Processes" else (
+        30 if key.startswith("enforced") else False
+    )
+    path = write_profile(tmp_path, {"PayloadType": payload_type, key: value})
     for version in (None, "26.6", "27", "27.1"):
         issues = SchemaValidator(
             loader=CompatibilityLoader(), target_macos=version
         ).validate(path).issues
+        assert any(i.code == "W002" for i in issues) == (version is None)
+        assert not any(i.code == "E003" for i in issues)
         removed = [i for i in issues if i.code == "E010"]
         assert bool(removed) == (version in ("27", "27.1"))
         if removed:
@@ -154,3 +159,23 @@ def test_introduced_sso_array_and_item_types(tmp_path, value, error_path):
     assert bool(errors) == (error_path is not None)
     if error_path:
         assert errors[0].key_path.endswith(error_path)
+
+
+@pytest.mark.parametrize("payload_type,key", [
+    ("com.apple.applicationaccess", "allowRapidSecurityResponseInstallation"),
+    ("com.apple.applicationaccess", "enforcedSoftwareUpdateDelay"),
+    ("com.apple.system.logging", "Processes"),
+])
+@pytest.mark.parametrize("version", ["26.6", "27"])
+def test_historical_keys_retain_type_and_unknown_sibling_checks(
+    tmp_path, payload_type, key, version,
+):
+    path = write_profile(tmp_path, {
+        "PayloadType": payload_type, key: "invalid", "Unrelated": True,
+    })
+    issues = SchemaValidator(
+        loader=CompatibilityLoader(), target_macos=version
+    ).validate(path).issues
+    assert {i.key_path for i in issues if i.code == "W002"} == {"PayloadContent[0].Unrelated"}
+    assert {i.key_path for i in issues if i.code == "E003"} == {f"PayloadContent[0].{key}"}
+    assert any(i.code == "E010" for i in issues) == (version == "27")

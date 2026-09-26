@@ -564,11 +564,14 @@ class SchemaValidator:
         subkeys = manifest.get("pfm_subkeys", [])
         if self.target_macos is not None:
             overlay = MACOS_COMPATIBILITY.get(str(payload.get("PayloadType")), {})
-            overlay_paths = overlay.get("introduced_keys", {})
+            overlay_schemas = {
+                **overlay.get("introduced_key_schema", {}),
+                **overlay.get("removed_key_schema", {}),
+            }
             # Supplement a private copy of the manifest at each dotted path.
             # Preserve existing definitions and validation of unrelated siblings.
             subkeys = copy.deepcopy(subkeys)
-            for overlay_path in overlay_paths:
+            for overlay_path, pinned_schema in overlay_schemas.items():
                 current = subkeys
                 parts = overlay_path.split(".")
                 for index, part in enumerate(parts):
@@ -580,7 +583,6 @@ class SchemaValidator:
                             definition["pfm_type"] = "dictionary"
                         current.append(definition)
                     if index == len(parts) - 1:
-                        pinned_schema = overlay["introduced_key_schema"][overlay_path]
                         for name, metadata in pinned_schema.items():
                             definition.setdefault(name, copy.deepcopy(metadata))
                     current = definition.setdefault("pfm_subkeys", [])
