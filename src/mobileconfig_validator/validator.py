@@ -584,7 +584,10 @@ class SchemaValidator:
                         current.append(definition)
                     if index == len(parts) - 1:
                         for name, metadata in pinned_schema.items():
-                            definition.setdefault(name, copy.deepcopy(metadata))
+                            if name not in definition:
+                                definition[name] = copy.deepcopy(metadata)
+                                if name == "pfm_subkeys":
+                                    definition["_compatibility_item_schema"] = True
                     current = definition.setdefault("pfm_subkeys", [])
         immediate_defs = self._get_immediate_subkey_defs(subkeys)
 
@@ -850,7 +853,7 @@ class SchemaValidator:
                 string_item_def = self._get_string_array_item_def(item_subkeys)
 
                 for idx, item in enumerate(value):
-                    if string_item_def and self.target_macos is not None:
+                    if string_item_def and key_def.get("_compatibility_item_schema"):
                         issues.extend(self._validate_key(
                             f"{key_path}[{idx}]", item, string_item_def
                         ))

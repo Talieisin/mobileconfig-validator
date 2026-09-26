@@ -179,3 +179,23 @@ def test_historical_keys_retain_type_and_unknown_sibling_checks(
     assert {i.key_path for i in issues if i.code == "W002"} == {"PayloadContent[0].Unrelated"}
     assert {i.key_path for i in issues if i.code == "E003"} == {f"PayloadContent[0].{key}"}
     assert any(i.code == "E010" for i in issues) == (version == "27")
+
+
+@pytest.mark.parametrize("value", [["not-a-uuid"], [{"a": 1}], [1]])
+def test_target_does_not_change_existing_array_item_validation(tmp_path, value):
+    class Loader(CompatibilityLoader):
+        def get_manifest(self, payload_type):
+            return {"pfm_subkeys": [{
+                "pfm_name": "PayloadCertificateAnchorUUID", "pfm_type": "array",
+                "pfm_subkeys": [{"pfm_name": "UUID", "pfm_type": "string",
+                                 "pfm_format": "uuid"}],
+            }]}
+
+    path = write_profile(tmp_path, {
+        "PayloadType": "com.apple.firstethernet.managed",
+        "PayloadCertificateAnchorUUID": value,
+    })
+    baseline = SchemaValidator(loader=Loader()).validate(path).issues
+    for target in ("26.6", "27"):
+        targeted = SchemaValidator(loader=Loader(), target_macos=target).validate(path).issues
+        assert targeted == baseline
