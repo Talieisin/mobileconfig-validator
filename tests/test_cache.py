@@ -124,3 +124,15 @@ def test_failed_clone_leaves_no_cache(tmp_path, upstream):
     with pytest.raises(subprocess.CalledProcessError):
         cache.ensure_cache()
     assert not cache.repo_dir.exists()
+
+
+def test_concurrent_cold_start_clones_once(tmp_path, upstream):
+    """pre-commit's parallel batches all hit an empty cache at once."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    url, commits = upstream
+    caches = [make_cache(tmp_path, url, commits[0]) for _ in range(8)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda cache: cache.ensure_cache(), caches))
+    assert all(cache._head() == commits[0] for cache in caches)
+    assert index_text(caches[0]) == "version 0\n"

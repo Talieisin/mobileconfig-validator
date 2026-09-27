@@ -10,9 +10,16 @@ import logging
 import os
 import re
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl
+except ImportError:  # Windows: no locking; concurrent first runs may race
+    fcntl = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +129,10 @@ class ManifestCache:
         Raises:
             RuntimeError: If cache doesn't exist and offline mode is enabled.
         """
+        with self._lock():
+            return self._ensure_cache()
+
+    def _ensure_cache(self) -> Path:
         if not self.repo_dir.exists():
             if self.offline:
                 raise RuntimeError(
@@ -157,6 +168,10 @@ class ManifestCache:
             logger.warning("Offline mode enabled, skipping cache update")
             return False
 
+        with self._lock():
+            return self._update(force)
+
+    def _update(self, force: bool) -> bool:
         if not self.repo_dir.exists():
             self._clone_repo()
             return True
@@ -224,6 +239,20 @@ class ManifestCache:
                 status["manifest_count"] = manifest_count
 
         return status
+
+    @contextmanager
+    def _lock(self) -> Iterator[None]:
+        """
+        Serialise cache creation and updates across processes.
+
+        pre-commit runs a hook as parallel batches, so a cold cache is
+        otherwise cloned by several processes into the same directory at once.
+        """
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.cache_dir / ".lock", "w") as handle:
+            if fcntl is not None:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+            yield
 
     def _git(self, *args: str) -> str:
         """Run a git command in the cached repository and return stdout."""
