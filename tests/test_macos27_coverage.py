@@ -229,3 +229,20 @@ def test_removed_payload_without_manifest_reports_removal_not_unknown(
     path = write_profile(tmp_path, {"PayloadType": "com.apple.SoftwareUpdate"})
     issues = SchemaValidator(loader=Loader(), target_macos=version).validate(path).issues
     assert {i.code for i in issues if i.severity.name != "INFO"} == codes
+
+
+@pytest.mark.parametrize("payload_type", [
+    "com.apple.TCC.configuration-profile-policy",
+    "com.apple.tcc.configuration-profile-policy",  # as OIB/Intune emit it
+])
+def test_overlay_matches_payload_type_case_insensitively(tmp_path, payload_type):
+    path = write_profile(tmp_path, {
+        "PayloadType": payload_type,
+        "Services": {"Accessibility": [{"Identifier": "com.example", "Allowed": True}]},
+    })
+    issues = SchemaValidator(
+        loader=CompatibilityLoader(), target_macos="27"
+    ).validate(path).issues
+    assert [i.key_path for i in issues if i.code == "W004"] == [
+        "PayloadContent[0].Services.Accessibility"
+    ]
