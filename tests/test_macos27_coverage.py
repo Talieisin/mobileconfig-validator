@@ -214,3 +214,18 @@ def test_target_does_not_change_existing_array_item_validation(tmp_path, value):
     for target in ("26.6", "27"):
         targeted = SchemaValidator(loader=Loader(), target_macos=target).validate(path).issues
         assert targeted == baseline
+
+
+@pytest.mark.parametrize("version,codes", [
+    (None, {"E001"}), ("26.6", {"E001", "W004"}), ("27", {"E010", "W004"}),
+])
+def test_removed_payload_without_manifest_reports_removal_not_unknown(
+    tmp_path, version, codes
+):
+    class Loader(CompatibilityLoader):
+        def get_manifest(self, payload_type):
+            return None
+
+    path = write_profile(tmp_path, {"PayloadType": "com.apple.SoftwareUpdate"})
+    issues = SchemaValidator(loader=Loader(), target_macos=version).validate(path).issues
+    assert {i.code for i in issues if i.severity.name != "INFO"} == codes

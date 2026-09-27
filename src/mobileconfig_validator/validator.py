@@ -242,7 +242,8 @@ class SchemaValidator:
 
             # Validate payload structure
             result.issues.extend(self._validate_payload_structure(payload, prefix))
-            result.issues.extend(self._validate_target_compatibility(payload, prefix))
+            compatibility = self._validate_target_compatibility(payload, prefix)
+            result.issues.extend(compatibility)
 
             # Get manifest for this PayloadType
             manifest = self.loader.get_manifest(payload_type)
@@ -255,8 +256,12 @@ class SchemaValidator:
                 result.issues.extend(
                     self._validate_payload_against_manifest(payload, manifest, prefix)
                 )
-            else:
-                # No manifest found
+            elif not any(
+                i.code == "E010" and i.key_path == f"{prefix}.PayloadType"
+                for i in compatibility
+            ):
+                # No manifest found. Skipped when the target overlay already
+                # reports the payload as removed: that is the actionable error.
                 result.issues.append(
                     ValidationIssue(
                         severity=Severity.ERROR,

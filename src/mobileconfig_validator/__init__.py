@@ -11,7 +11,7 @@ Usage:
 from .api import validate_file, validate_files
 from .types import Severity, ValidationIssue, ValidationResult
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __all__ = [
     "validate_file",
     "validate_files",

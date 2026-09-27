@@ -55,6 +55,7 @@ This is a pure Python validator for Apple Configuration Profiles (.mobileconfig)
 
 - **Pure stdlib**: No runtime dependencies - uses only Python standard library (plistlib, subprocess, etc.)
 - **Sparse git clone**: Downloads only Manifests directory to minimise disc usage (requires `git` in PATH)
+- **Pinned schemas**: The clone is checked out at `PROFILEMANIFESTS_REF` (`cache.py`), not upstream HEAD; bump it deliberately (README, "Updating the ProfileManifests pin")
 - **Lazy loading**: Manifests are loaded on-demand and cached in memory
 - **ProfileManifests schema format**: Uses pfm_* attributes (pfm_type, pfm_require, pfm_range_list, pfm_subkeys, etc.)
 
