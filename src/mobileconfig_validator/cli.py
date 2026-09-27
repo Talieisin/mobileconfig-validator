@@ -12,6 +12,7 @@ import logging
 import sys
 from pathlib import Path
 
+from . import __version__
 from .api import get_cache_status, update_cache, validate_files
 from .formatter import get_formatter
 from .validator import SchemaValidator
@@ -155,7 +156,7 @@ Examples:
     parser.add_argument(
         "--version",
         action="version",
-        version="%(prog)s 1.0.0",
+        version=f"%(prog)s {__version__}",
     )
 
     parsed = parser.parse_args(args)

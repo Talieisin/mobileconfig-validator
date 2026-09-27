@@ -149,7 +149,7 @@ class ManifestCache:
                     )
                 else:
                     self._update_repo()
-        elif self._is_stale() and not self.offline:
+        elif self._needs_branch_refresh() and not self.offline:
             self._update_repo()
 
         return self.manifests_dir
@@ -179,7 +179,7 @@ class ManifestCache:
         if self.pinned:
             return self._head() != self.ref and self._update_repo()
 
-        if force or self._is_stale():
+        if force or self._needs_branch_refresh():
             return self._update_repo()
 
         return False
@@ -348,6 +348,10 @@ class ManifestCache:
         self._save_metadata(metadata)
 
         return updated
+
+    def _needs_branch_refresh(self) -> bool:
+        """A branch cache refreshes when stale or last fetched for another ref."""
+        return self._load_metadata().get("ref") != self.ref or self._is_stale()
 
     def _is_stale(self) -> bool:
         """Check if the cache is older than max_age_days."""

@@ -136,3 +136,17 @@ def test_concurrent_cold_start_clones_once(tmp_path, upstream):
         list(pool.map(lambda cache: cache.ensure_cache(), caches))
     assert all(cache._head() == commits[0] for cache in caches)
     assert index_text(caches[0]) == "version 0\n"
+
+
+def test_changing_ref_refreshes_a_fresh_branch_cache(tmp_path, upstream):
+    """A new ref takes effect on the next run, not after max_age_days."""
+    url, commits = upstream
+    upstream_dir = Path(url.removeprefix("file://"))
+    git(upstream_dir, "branch", "older", commits[1])
+    make_cache(tmp_path, url, commits[0]).ensure_cache()
+    tip = make_cache(tmp_path, url, "master", max_age_days=30)
+    tip.ensure_cache()
+    assert tip._head() == commits[2]
+    older = make_cache(tmp_path, url, "older", max_age_days=30)
+    older.ensure_cache()
+    assert older._head() == commits[1]
