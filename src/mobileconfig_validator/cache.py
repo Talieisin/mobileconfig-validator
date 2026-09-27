@@ -8,10 +8,18 @@ from https://github.com/ProfileManifests/ProfileManifests
 import json
 import logging
 import os
+import re
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl
+except ImportError:  # Windows: no locking; concurrent first runs may race
+    fcntl = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +51,13 @@ DEFAULT_CACHE_DIR = _get_default_cache_dir()
 REPO_URL = "https://github.com/ProfileManifests/ProfileManifests.git"
 REPO_DIR_NAME = "ProfileManifests"
 
+# ProfileManifests commit the validator is tested against. Tracking upstream
+# HEAD let an unrelated manifest change fail every consumer's CI with no code
+# change (2026-09-17, com.apple.screensaver moduleName). Bump deliberately:
+# see "Updating the ProfileManifests pin" in README.md.
+# VALIDATOR_PROFILEMANIFESTS_REF overrides it with another commit or a branch.
+PROFILEMANIFESTS_REF = "73fc518f485c2b29ec8184d26b068266e8f30deb"
+
 # Cache staleness threshold (days)
 DEFAULT_MAX_AGE_DAYS = 7
 
@@ -51,8 +66,9 @@ class ManifestCache:
     """
     Manages ProfileManifests repository cache using sparse git clone.
 
-    Uses shallow sparse clone to download only the Manifests directory (~5MB).
-    Change detection is handled by git fetch/pull.
+    Uses shallow sparse clone to download only the Manifests directory (~10MB).
+    A commit ref (the default) is checked out exactly and never goes stale; a
+    branch ref is re-fetched once the cache is older than max_age_days.
     """
 
     def __init__(
@@ -60,6 +76,8 @@ class ManifestCache:
         cache_dir: Path | None = None,
         max_age_days: int | None = None,
         offline: bool = False,
+        ref: str | None = None,
+        repo_url: str = REPO_URL,
     ):
         """
         Initialise the manifest cache.
@@ -69,6 +87,9 @@ class ManifestCache:
             max_age_days: Days before cache is considered stale. Defaults to 7.
                           Can be overridden with VALIDATOR_CACHE_MAX_AGE env var.
             offline: If True, never attempt network operations.
+            ref: ProfileManifests commit or branch. Defaults to
+                 VALIDATOR_PROFILEMANIFESTS_REF, then PROFILEMANIFESTS_REF.
+            repo_url: Repository to clone (overridable for tests).
         """
         self.cache_dir = cache_dir or Path(
             os.environ.get("VALIDATOR_CACHE_DIR", str(DEFAULT_CACHE_DIR))
@@ -85,6 +106,16 @@ class ManifestCache:
             "yes",
         )
 
+        self.ref = (
+            ref
+            or os.environ.get("VALIDATOR_PROFILEMANIFESTS_REF")
+            or PROFILEMANIFESTS_REF
+        )
+        self.pinned = re.fullmatch(r"[0-9a-fA-F]{40}", self.ref) is not None
+        if self.pinned:
+            self.ref = self.ref.lower()  # git rev-parse output is lowercase
+        self.repo_url = repo_url
+
         self.repo_dir = self.cache_dir / REPO_DIR_NAME
         self.manifests_dir = self.repo_dir / "Manifests"
         self.metadata_path = self.cache_dir / "cache.json"
@@ -98,6 +129,10 @@ class ManifestCache:
         Raises:
             RuntimeError: If cache doesn't exist and offline mode is enabled.
         """
+        with self._lock():
+            return self._ensure_cache()
+
+    def _ensure_cache(self) -> Path:
         if not self.repo_dir.exists():
             if self.offline:
                 raise RuntimeError(
@@ -105,7 +140,16 @@ class ManifestCache:
                     "and offline mode is enabled. Run with --update-cache first."
                 )
             self._clone_repo()
-        elif self._is_stale() and not self.offline:
+        elif self.pinned:
+            if self._head() != self.ref:
+                if self.offline:
+                    logger.warning(
+                        f"ProfileManifests cache is at {self._head() or 'unknown'}, "
+                        f"not the pinned {self.ref}; offline mode, using it anyway"
+                    )
+                else:
+                    self._update_repo()
+        elif self._needs_branch_refresh() and not self.offline:
             self._update_repo()
 
         return self.manifests_dir
@@ -124,11 +168,18 @@ class ManifestCache:
             logger.warning("Offline mode enabled, skipping cache update")
             return False
 
+        with self._lock():
+            return self._update(force)
+
+    def _update(self, force: bool) -> bool:
         if not self.repo_dir.exists():
             self._clone_repo()
             return True
 
-        if force or self._is_stale():
+        if self.pinned:
+            return self._head() != self.ref and self._update_repo()
+
+        if force or self._needs_branch_refresh():
             return self._update_repo()
 
         return False
@@ -165,26 +216,20 @@ class ManifestCache:
             "exists": self.repo_dir.exists(),
             "offline": self.offline,
             "max_age_days": self.max_age_days,
+            "ref": self.ref,
+            "pinned": self.pinned,
         }
 
         if self.repo_dir.exists():
             metadata = self._load_metadata()
             status["last_check"] = metadata.get("last_check")
             status["clone_created"] = metadata.get("clone_created")
-            status["is_stale"] = self._is_stale()
-
-            # Get commit info
-            try:
-                result = subprocess.run(
-                    ["git", "rev-parse", "--short", "HEAD"],
-                    cwd=self.repo_dir,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                status["commit"] = result.stdout.strip()
-            except subprocess.CalledProcessError:
-                status["commit"] = "unknown"
+            head = self._head()
+            status["commit"] = head or "unknown"
+            if self.pinned:
+                status["at_ref"] = head == self.ref
+            else:
+                status["is_stale"] = self._is_stale()
 
             # Count manifests
             if self.manifests_dir.exists():
@@ -195,45 +240,80 @@ class ManifestCache:
 
         return status
 
-    def _clone_repo(self) -> None:
-        """Clone the ProfileManifests repository with sparse checkout."""
-        logger.info(f"Cloning ProfileManifests to {self.repo_dir}...")
+    @contextmanager
+    def _lock(self) -> Iterator[None]:
+        """
+        Serialise cache creation and updates across processes.
 
-        # Create cache directory
+        pre-commit runs a hook as parallel batches, so a cold cache is
+        otherwise cloned by several processes into the same directory at once.
+        """
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.cache_dir / ".lock", "w") as handle:
+            if fcntl is not None:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+            yield
 
-        # Shallow clone with blob filter (downloads tree but not blobs initially)
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                "--depth",
-                "1",
-                "--filter=blob:none",
-                "--sparse",
-                REPO_URL,
-                str(self.repo_dir),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-        # Set up sparse checkout for Manifests directory only
-        subprocess.run(
-            ["git", "sparse-checkout", "set", "Manifests"],
+    def _git(self, *args: str) -> str:
+        """Run a git command in the cached repository and return stdout."""
+        result = subprocess.run(
+            ["git", *args],
             cwd=self.repo_dir,
             check=True,
             capture_output=True,
             text=True,
         )
+        return result.stdout.strip()
 
-        # Save metadata
+    def _head(self) -> str | None:
+        """Return the full commit checked out in the cache, if any."""
+        try:
+            return self._git("rev-parse", "--verify", "--quiet", "HEAD")
+        except (subprocess.CalledProcessError, OSError):
+            return None
+
+    def _checkout_ref(self) -> bool:
+        """
+        Fetch self.ref (shallow, blobs on demand) and check it out detached.
+
+        Returns:
+            True if HEAD moved, False if it was already there.
+        """
+        self._git(
+            "fetch", "--depth", "1", "--filter=blob:none", "origin", self.ref
+        )
+        target = self._git("rev-parse", "FETCH_HEAD")
+        if target == self._head():
+            return False
+        self._git("checkout", "--quiet", "--detach", target)
+        return True
+
+    def _clone_repo(self) -> None:
+        """Create a sparse clone of ProfileManifests at self.ref."""
+        logger.info(f"Cloning ProfileManifests {self.ref} to {self.repo_dir}...")
+
+        self.repo_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self._git("init", "--quiet")
+            self._git("remote", "add", "origin", self.repo_url)
+            # Sparse checkout for the Manifests directory only
+            self._git("sparse-checkout", "set", "Manifests")
+            self._checkout_ref()
+        except (subprocess.CalledProcessError, OSError):
+            # Leave no half-built clone behind: ensure_cache treats an existing
+            # repo_dir as a usable cache.
+            import shutil
+
+            shutil.rmtree(self.repo_dir, ignore_errors=True)
+            raise
+
+        now = datetime.now(UTC).isoformat() + "Z"
         self._save_metadata(
             {
-                "cache_version": 1,
-                "clone_created": datetime.now(UTC).isoformat() + "Z",
-                "last_check": datetime.now(UTC).isoformat() + "Z",
+                "cache_version": 2,
+                "ref": self.ref,
+                "clone_created": now,
+                "last_check": now,
             }
         )
 
@@ -241,59 +321,37 @@ class ManifestCache:
 
     def _update_repo(self) -> bool:
         """
-        Update the repository if there are changes.
+        Move the cache to self.ref, fetching it if necessary.
+
+        Also migrates caches cloned by earlier versions, which tracked HEAD.
 
         Returns:
-            True if updated, False if already up to date.
+            True if updated, False if already up to date or the fetch failed.
         """
-        logger.info("Checking for ProfileManifests updates...")
+        logger.info(f"Checking ProfileManifests cache against {self.ref}...")
 
         try:
-            # Fetch latest (shallow)
-            subprocess.run(
-                ["git", "fetch", "--depth", "1"],
-                cwd=self.repo_dir,
-                check=True,
-                capture_output=True,
-                text=True,
+            updated = self._checkout_ref()
+            logger.info(
+                "ProfileManifests cache updated"
+                if updated
+                else "ProfileManifests cache is up to date"
             )
-
-            # Check if there are changes
-            result = subprocess.run(
-                ["git", "diff", "--quiet", "HEAD", "FETCH_HEAD"],
-                cwd=self.repo_dir,
-                capture_output=True,
-            )
-
-            if result.returncode != 0:
-                # There are changes, pull them
-                subprocess.run(
-                    ["git", "pull", "--depth", "1"],
-                    cwd=self.repo_dir,
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-                logger.info("ProfileManifests cache updated")
-                updated = True
-            else:
-                logger.info("ProfileManifests cache is up to date")
-                updated = False
-
-            # Update last check time
-            metadata = self._load_metadata()
-            metadata["last_check"] = datetime.now(UTC).isoformat() + "Z"
-            self._save_metadata(metadata)
-
-            return updated
-
         except subprocess.CalledProcessError as e:
             logger.warning(f"Failed to update cache: {e}")
-            # Update last check even on failure to avoid hammering
-            metadata = self._load_metadata()
-            metadata["last_check"] = datetime.now(UTC).isoformat() + "Z"
-            self._save_metadata(metadata)
-            return False
+            updated = False
+
+        # Update last check time, even on failure to avoid hammering
+        metadata = self._load_metadata()
+        metadata["ref"] = self.ref
+        metadata["last_check"] = datetime.now(UTC).isoformat() + "Z"
+        self._save_metadata(metadata)
+
+        return updated
+
+    def _needs_branch_refresh(self) -> bool:
+        """A branch cache refreshes when stale or last fetched for another ref."""
+        return self._load_metadata().get("ref") != self.ref or self._is_stale()
 
     def _is_stale(self) -> bool:
         """Check if the cache is older than max_age_days."""

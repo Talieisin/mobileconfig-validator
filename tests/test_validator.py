@@ -356,3 +356,69 @@ def test_overlay_without_replacement(tmp_path, monkeypatch):
     issues = SchemaValidator(loader=CompatibilityLoader(), target_macos="27").validate(path).issues
     assert {"E010", "W004"} <= {i.code for i in issues}
     assert all("None" not in i.message for i in issues)
+
+
+class TestManifestConditions:
+    """pfm_exclude and pfm_range_list_allow_custom_value, against real manifests."""
+
+    def test_redirect_extension_needs_no_realm_and_allows_custom_team(
+        self, valid_fixtures_dir: Path
+    ):
+        result = validate_file(valid_fixtures_dir / "extensiblesso-redirect.mobileconfig")
+        assert result.is_valid, result.issues
+        assert not any(i.code in ("E002", "E004") for i in result.issues)
+
+    def test_credential_extension_still_requires_realm(self, invalid_fixtures_dir: Path):
+        result = validate_file(
+            invalid_fixtures_dir / "extensiblesso-credential-missing-realm.mobileconfig"
+        )
+        assert [i.key_path for i in result.issues if i.code == "E002"] == [
+            "PayloadContent[0].Realm"
+        ]
+
+
+def _conditional_loader(key_def: dict[str, Any]) -> CompatibilityLoader:
+    class Loader(CompatibilityLoader):
+        def get_manifest(self, payload_type: str) -> dict[str, Any]:
+            return {"pfm_platforms": ["macOS"], "pfm_subkeys": [
+                {"pfm_name": "Mode", "pfm_type": "string"},
+                {"pfm_name": "Tags", "pfm_type": "array"},
+                {"pfm_name": "Needed", "pfm_type": "string", **key_def},
+            ]}
+
+    return Loader()
+
+
+@pytest.mark.parametrize("condition,siblings,required", [
+    ({"pfm_target": "Mode", "pfm_range_list": ["a"]}, {"Mode": "a"}, False),
+    ({"pfm_target": "Mode", "pfm_range_list": ["a"]}, {"Mode": "b"}, True),
+    ({"pfm_target": "Mode", "pfm_range_list": ["a"]}, {}, True),
+    ({"pfm_target": "Mode", "pfm_n_range_list": ["a"]}, {"Mode": "b"}, False),
+    ({"pfm_target": "Mode", "pfm_n_range_list": ["a"]}, {"Mode": "a"}, True),
+    ({"pfm_target": "Mode", "pfm_present": False}, {}, False),
+    ({"pfm_target": "Mode", "pfm_present": True}, {}, True),
+    ({"pfm_target": "Tags", "pfm_contains_any": ["x"]}, {"Tags": ["x", "y"]}, False),
+    ({"pfm_target": "Tags", "pfm_n_contains_any": ["x"]}, {"Tags": ["x"]}, True),
+    ({"pfm_target": "Mode", "pfm_value_empty": True}, {"Mode": ""}, False),
+    # Unevaluable conditions never waive a requirement
+    ({"pfm_distribution": "manual"}, {}, True),
+    ({"pfm_target": "Outer.Mode", "pfm_present": False}, {}, True),
+])
+def test_pfm_exclude_waives_requirement(tmp_path, condition, siblings, required):
+    loader = _conditional_loader({
+        "pfm_require": "always",
+        "pfm_exclude": [{"pfm_target_conditions": [condition]}],
+    })
+    path = write_profile(tmp_path, {"PayloadType": "com.example.conditional", **siblings})
+    issues = SchemaValidator(loader=loader).validate(path).issues
+    assert any(i.code == "E002" for i in issues) == required
+
+
+@pytest.mark.parametrize("allow_custom,expect_error", [(True, False), (False, True)])
+def test_range_list_allow_custom_value(tmp_path, allow_custom, expect_error):
+    loader = _conditional_loader({
+        "pfm_range_list": ["apple"], "pfm_range_list_allow_custom_value": allow_custom,
+    })
+    path = write_profile(tmp_path, {"PayloadType": "com.example.conditional", "Needed": "x"})
+    issues = SchemaValidator(loader=loader).validate(path).issues
+    assert any(i.code == "E004" for i in issues) == expect_error

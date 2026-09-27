@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from mobileconfig_validator import __version__
+
 
 def run_cli(*args: str, check: bool = False) -> subprocess.CompletedProcess:
     """Run the CLI with arguments and return the result."""
@@ -26,7 +28,7 @@ class TestCLIBasic:
         """--version shows version number."""
         result = run_cli("--version")
         assert result.returncode == 0
-        assert "1.0.0" in result.stdout
+        assert __version__ in result.stdout
 
     def test_invalid_target_macos_version(self):
         result = run_cli("--target-macos", "27-beta")

@@ -122,13 +122,14 @@ The target overlay covers the macOS profile changes in Apple's [Release-v27.0](h
 
 ## Cache Management
 
-The validator downloads ProfileManifests schemas on first run and caches them locally using git (sparse clone, ~5MB).
+The validator downloads ProfileManifests schemas on first run and caches them locally using git (sparse clone, ~10MB).
 
 **Requirements:** `git` must be installed and available in PATH.
 
 - **Default location**: `~/.cache/mobileconfig-validator/`
 - **Environment variable**: `VALIDATOR_CACHE_DIR`
-- **Staleness threshold**: 7 days (configurable via `VALIDATOR_CACHE_MAX_AGE`)
+- **Schema version**: pinned to a ProfileManifests commit (`PROFILEMANIFESTS_REF` in `src/mobileconfig_validator/cache.py`), so results change only when the validator is released, never because upstream moved. An existing cache is moved to the pin on the next run; offline, a mismatched cache is used with a warning.
+- **Override**: `VALIDATOR_PROFILEMANIFESTS_REF` takes another commit, or a branch such as `master` to track upstream. Only a branch ref goes stale, after 7 days (configurable via `VALIDATOR_CACHE_MAX_AGE`).
 
 ```bash
 # Check cache status
@@ -143,6 +144,12 @@ uv run mobileconfig-validator --clear-cache
 # Work offline (use existing cache)
 uv run mobileconfig-validator --offline profile.mobileconfig
 ```
+
+### Updating the ProfileManifests pin
+
+1. Pick the upstream commit: `git ls-remote https://github.com/ProfileManifests/ProfileManifests.git HEAD`.
+2. Run the suite against it: `VALIDATOR_PROFILEMANIFESTS_REF=<sha> uv run pytest`. Failures are manifest changes to review, not flakes — fix fixtures or code as needed (for example, the 2026-09-17 update made `moduleName` required in `com.apple.screensaver`).
+3. Set `PROFILEMANIFESTS_REF` to the full 40-character SHA, bump the version and release, so consumers pick up the new schemas by bumping their pinned `rev`.
 
 ## Pre-commit Integration
 

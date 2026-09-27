@@ -242,7 +242,8 @@ class SchemaValidator:
 
             # Validate payload structure
             result.issues.extend(self._validate_payload_structure(payload, prefix))
-            result.issues.extend(self._validate_target_compatibility(payload, prefix))
+            compatibility = self._validate_target_compatibility(payload, prefix)
+            result.issues.extend(compatibility)
 
             # Get manifest for this PayloadType
             manifest = self.loader.get_manifest(payload_type)
@@ -255,8 +256,12 @@ class SchemaValidator:
                 result.issues.extend(
                     self._validate_payload_against_manifest(payload, manifest, prefix)
                 )
-            else:
-                # No manifest found
+            elif not any(
+                i.code == "E010" and i.key_path == f"{prefix}.PayloadType"
+                for i in compatibility
+            ):
+                # No manifest found. Skipped when the target overlay already
+                # reports the payload as removed: that is the actionable error.
                 result.issues.append(
                     ValidationIssue(
                         severity=Severity.ERROR,
@@ -299,6 +304,77 @@ class SchemaValidator:
         padded = (parts + [0, 0])[:3]
         return padded[0], padded[1], padded[2]
 
+    @staticmethod
+    def _compatibility_rule(payload_type: str) -> dict[str, Any]:
+        """Overlay rule for a PayloadType, matched case-insensitively like manifests."""
+        folded = payload_type.casefold()
+        for name, rule in MACOS_COMPATIBILITY.items():
+            if name.casefold() == folded:
+                return rule
+        return {}
+
+    # pfm_target_conditions keys _condition_met can evaluate
+    _CONDITION_KEYS = frozenset({
+        "pfm_target", "pfm_present", "pfm_range_list", "pfm_n_range_list",
+        "pfm_contains_any", "pfm_n_contains_any", "pfm_value_empty",
+    })
+
+    @classmethod
+    def _condition_met(cls, condition: dict[str, Any], siblings: dict[str, Any]) -> bool:
+        """
+        Evaluate one ProfileManifests target condition against sibling keys.
+
+        Conditions this cannot evaluate (other keys, or a dotted target path)
+        count as unmet, so a key stays required rather than being waived.
+        """
+        target = condition.get("pfm_target")
+        if (
+            set(condition) - cls._CONDITION_KEYS
+            or not isinstance(target, str)
+            or "." in target
+        ):
+            return False
+        present = target in siblings
+        if "pfm_present" in condition and condition["pfm_present"] != present:
+            return False
+        value_checks = set(condition) - {"pfm_target", "pfm_present"}
+        if not value_checks:
+            return True
+        if not present:
+            return False
+        value = siblings[target]
+        if "pfm_range_list" in condition and value not in condition["pfm_range_list"]:
+            return False
+        if "pfm_n_range_list" in condition and value in condition["pfm_n_range_list"]:
+            return False
+        if "pfm_contains_any" in condition or "pfm_n_contains_any" in condition:
+            if not isinstance(value, (str, list)):
+                return False
+            if "pfm_contains_any" in condition and not any(
+                item in value for item in condition["pfm_contains_any"]
+            ):
+                return False
+            if "pfm_n_contains_any" in condition and any(
+                item in value for item in condition["pfm_n_contains_any"]
+            ):
+                return False
+        if "pfm_value_empty" in condition:
+            empty = value in ("", [], {}) or value is None
+            if empty != condition["pfm_value_empty"]:
+                return False
+        return True
+
+    @classmethod
+    def _is_required(cls, key_def: dict[str, Any], siblings: dict[str, Any]) -> bool:
+        """pfm_require "always", unless a pfm_exclude entry matches the siblings."""
+        if key_def.get("pfm_require") != "always":
+            return False
+        for exclude in key_def.get("pfm_exclude") or []:
+            conditions = exclude.get("pfm_target_conditions") or []
+            if conditions and all(cls._condition_met(c, siblings) for c in conditions):
+                return False
+        return True
+
     def _validate_target_compatibility(
         self, payload: dict[str, Any], prefix: str
     ) -> list[ValidationIssue]:
@@ -309,7 +385,7 @@ class SchemaValidator:
         payload_type = payload.get("PayloadType")
         if not isinstance(payload_type, str):
             return []
-        rule = MACOS_COMPATIBILITY.get(payload_type)
+        rule = self._compatibility_rule(payload_type)
         if not rule:
             return []
 
@@ -563,7 +639,7 @@ class SchemaValidator:
         # Get ONLY immediate subkeys (not flattened) for this level
         subkeys = manifest.get("pfm_subkeys", [])
         if self.target_macos is not None:
-            overlay = MACOS_COMPATIBILITY.get(str(payload.get("PayloadType")), {})
+            overlay = self._compatibility_rule(str(payload.get("PayloadType")))
             overlay_schemas = {
                 **overlay.get("introduced_key_schema", {}),
                 **overlay.get("removed_key_schema", {}),
@@ -593,8 +669,7 @@ class SchemaValidator:
 
         # Check required keys at this level only
         for key_name, key_def in immediate_defs.items():
-            require = key_def.get("pfm_require")
-            if require == "always" and key_name not in payload:
+            if key_name not in payload and self._is_required(key_def, payload):
                 # Skip standard payload keys that are checked separately
                 if key_name in self.STANDARD_PAYLOAD_KEYS:
                     continue
@@ -737,7 +812,11 @@ class SchemaValidator:
 
         # Range list (enum)
         range_list = key_def.get("pfm_range_list")
-        if range_list and value not in range_list:
+        if (
+            range_list
+            and value not in range_list
+            and not key_def.get("pfm_range_list_allow_custom_value")
+        ):
             issues.append(
                 ValidationIssue(
                     severity=Severity.ERROR,
@@ -804,8 +883,9 @@ class SchemaValidator:
 
                 # Check required keys at this nesting level
                 for nested_key_name, nested_key_def in nested_defs.items():
-                    require = nested_key_def.get("pfm_require")
-                    if require == "always" and nested_key_name not in value:
+                    if nested_key_name not in value and self._is_required(
+                        nested_key_def, value
+                    ):
                         issues.append(
                             ValidationIssue(
                                 severity=Severity.ERROR,
@@ -861,8 +941,9 @@ class SchemaValidator:
                     if isinstance(item, dict):
                         # Check required keys for each array item
                         for item_key_name, item_key_def in item_defs.items():
-                            require = item_key_def.get("pfm_require")
-                            if require == "always" and item_key_name not in item:
+                            if item_key_name not in item and self._is_required(
+                                item_key_def, item
+                            ):
                                 issues.append(
                                     ValidationIssue(
                                         severity=Severity.ERROR,
@@ -895,7 +976,13 @@ class SchemaValidator:
                     elif isinstance(item, str) and string_item_def:
                         # Preserve the existing structural-only path when no target is set.
                         item_range_list = string_item_def.get("pfm_range_list")
-                        if item_range_list and item not in item_range_list:
+                        if (
+                            item_range_list
+                            and item not in item_range_list
+                            and not string_item_def.get(
+                                "pfm_range_list_allow_custom_value"
+                            )
+                        ):
                             issues.append(
                                 ValidationIssue(
                                     severity=Severity.ERROR,
