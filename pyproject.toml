@@ -62,6 +62,9 @@ Issues = "https://github.com/Talieisin/mobileconfig-validator/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/mobileconfig_validator"]
 
+[tool.uv]
+override-dependencies = ["filelock>=4.2.1"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
